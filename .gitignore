@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# CEA cache
+physics/thermochem/cache/
+
+# Plots and generated artifacts
+physics/*/plots/
+geometry/**/exports/
+verification/reports/
+
+# OS junk
+.DS_Store
+Thumbs.db
