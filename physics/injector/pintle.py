@@ -9,15 +9,41 @@ propellant flows (here LOX, through an annular gap) and a co-axial sleeve
 through which the second propellant (LCH4) enters via discrete orifices
 arranged around the pintle periphery.
 
-The Total Momentum Ratio (TMR) quantifies the relative momenta of the two
-streams and is the primary mixing-quality parameter for pintle injectors.
-A TMR of 1.0 indicates balanced momentum — a common starting point.
+The Total Momentum Ratio (TMR) is the primary mixing-quality parameter.
+It is defined here as the ratio of fuel-stream radial momentum to
+oxidiser-stream radial momentum:
 
-Source
-------
+    TMR = (m_dot_fuel · V_fuel) / (m_dot_ox · V_ox)
+
+Using the incompressible orifice relation (V = Cd · sqrt(2·dP/ρ)), this
+reduces to:
+
+    TMR = (1/MR) · (Cd_f / Cd_ox) · sqrt( (ρ_ox/ρ_f) · (dP_f/dP_ox) )
+
+where MR = m_dot_ox / m_dot_fuel.
+
+This formula does NOT simplify to 1.0 in general.  It collapses to 1.0 only
+if MR = 1, Cd_f = Cd_ox, ρ_f = ρ_ox, and dP_f = dP_ox simultaneously — not
+a physically realistic case for LCH4/LOX.
+
+Historical note
+---------------
+An earlier version of this module used the definition
+    TMR_old = ρ_ox · V_ox² / (ρ_f · V_f²)
+which is a *dynamic-pressure* ratio, not a momentum ratio.  Substituting
+V = Cd · sqrt(2·dP/ρ) into that formula gives
+    TMR_old = (Cd_ox² · dP_ox) / (Cd_f² · dP_f)
+which is entirely independent of densities and mass flows.  With equal Cd
+and equal dP, TMR_old = 1.000 exactly — regardless of MR, ρ_ox, or ρ_f.
+This produced the misleading "TMR = 1.000" result from the uniform-ΔP era.
+The correct momentum-ratio formula above has been in use since the decoupled-
+ΔP refactor (commit after 04a0cb6).
+
+Sources
+-------
     Dressler, G.A. and Bauer, J.M. (2000). "TRW Pintle Engine Heritage and
-    Performance Characteristics." AIAA 2000-3871. Section 3 — injector
-    geometry and TMR definition.
+    Performance Characteristics." AIAA 2000-3871. Section 3 — TMR definition
+    and recommended range 0.5 ≤ TMR ≤ 2.0.
 
     Sutton, G.P. and Biblarz, O. (2017). *Rocket Propulsion Elements*,
     9th ed., Ch. 8 — orifice and annulus sizing.
@@ -30,6 +56,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Optional
 
 from physics.injector.orifice import (
     injection_velocity,
@@ -43,8 +70,12 @@ class PintleInjector:
     Single-element pintle injector geometry and performance.
 
     The pintle OD and number of fuel orifices are design parameters chosen
-    by the engineer. All derived geometry flows from the mass flow / pressure
-    drop constraints via the incompressible orifice equation.
+    by the engineer.  All derived geometry flows from the mass flow and
+    pressure-drop constraints via the incompressible orifice equation.
+
+    Oxidiser and fuel may now carry *different* injection pressure drops
+    (dP_ox, dP_fuel), making TMR a genuine design variable.  For equal drops
+    use the :meth:`from_uniform_dP` classmethod.
 
     Source: Dressler & Bauer (2000), AIAA 2000-3871.
 
@@ -58,27 +89,148 @@ class PintleInjector:
         Oxidiser density at injection conditions [kg/m³].
     rho_fuel : float
         Fuel density at injection conditions [kg/m³].
-    dP_inj : float
-        Injector pressure drop [Pa]. Applied to both streams.
+    dP_ox : float, optional
+        Oxidiser injector pressure drop [Pa].  Required unless ``dP_inj``
+        is supplied for backward compatibility.
+    dP_fuel : float, optional
+        Fuel injector pressure drop [Pa].  Required unless ``dP_inj``
+        is supplied for backward compatibility.
+    dP_inj : float, optional
+        *Deprecated.*  Uniform pressure drop [Pa] applied to both streams.
+        Provided for backward compatibility; prefer ``from_uniform_dP``.
     Cd_ox : float
-        Discharge coefficient for LOX annulus [-].
-    Cd_fuel : float
-        Discharge coefficient for fuel orifices [-].
+        Discharge coefficient for LOX annulus (user input; Lichtarowicz does
+        not apply to annular passages).  Default 0.6.
+    Cd_fuel : float, optional
+        Discharge coefficient for fuel orifices.  If ``None``, the
+        Lichtarowicz–Duggins–Markland (1965) correlation is used and
+        ``mu_fuel`` must be supplied.  Default 0.6 (constant).
+    LD_fuel : float
+        Length-to-diameter ratio of fuel orifices for Lichtarowicz.
+        Default 4.0.
+    mu_fuel : float, optional
+        Dynamic viscosity of the fuel at injection conditions [Pa·s].
+        Required when ``Cd_fuel`` is ``None``.
     pintle_OD : float
-        Outer diameter of the pintle post [m]. Design parameter.
+        Outer diameter of the pintle post [m].  Design parameter.
     n_fuel_orifices : int
-        Number of discrete fuel injection orifices [-]. Design parameter.
+        Number of discrete fuel injection orifices.  Design parameter.
     """
 
-    m_dot_ox: float       # kg/s
-    m_dot_fuel: float     # kg/s
-    rho_ox: float         # kg/m³
-    rho_fuel: float       # kg/m³
-    dP_inj: float         # Pa
+    m_dot_ox: float
+    m_dot_fuel: float
+    rho_ox: float
+    rho_fuel: float
+    dP_ox: Optional[float] = None
+    dP_fuel: Optional[float] = None
+    dP_inj: Optional[float] = None   # deprecated; use from_uniform_dP
     Cd_ox: float = 0.6
-    Cd_fuel: float = 0.6
-    pintle_OD: float = 0.030    # m
+    Cd_fuel: Optional[float] = 0.6
+    LD_fuel: float = 4.0
+    mu_fuel: Optional[float] = None
+    pintle_OD: float = 0.030
     n_fuel_orifices: int = 20
+
+    # ------------------------------------------------------------------
+    # Construction helpers
+    # ------------------------------------------------------------------
+
+    def __post_init__(self) -> None:
+        # Backward-compat: single dP_inj → both streams.
+        if self.dP_inj is not None and self.dP_ox is None and self.dP_fuel is None:
+            self.dP_ox = self.dP_inj
+            self.dP_fuel = self.dP_inj
+        if self.dP_ox is None or self.dP_fuel is None:
+            raise ValueError(
+                "PintleInjector requires dP_ox and dP_fuel.  "
+                "For a uniform drop use PintleInjector.from_uniform_dP(dP_inj=…)."
+            )
+        if self.Cd_fuel is None and self.mu_fuel is None:
+            raise ValueError(
+                "mu_fuel is required when Cd_fuel is None "
+                "(Lichtarowicz iteration needs viscosity)."
+            )
+
+    @classmethod
+    def from_uniform_dP(
+        cls,
+        *,
+        dP_inj: float,
+        m_dot_ox: float,
+        m_dot_fuel: float,
+        rho_ox: float,
+        rho_fuel: float,
+        Cd_ox: float = 0.6,
+        Cd_fuel: Optional[float] = 0.6,
+        LD_fuel: float = 4.0,
+        mu_fuel: Optional[float] = None,
+        pintle_OD: float = 0.030,
+        n_fuel_orifices: int = 20,
+    ) -> "PintleInjector":
+        """
+        Construct with equal pressure drop on both propellant streams.
+
+        This is the backward-compatible entry point that replaces the old
+        single ``dP_inj`` field.  Passing ``dP_inj=X`` is exactly equivalent
+        to ``PintleInjector(dP_ox=X, dP_fuel=X, …)``.
+
+        Parameters
+        ----------
+        dP_inj : float
+            Uniform injector pressure drop [Pa] applied to both streams.
+        **kwargs
+            All other ``PintleInjector`` fields.
+        """
+        return cls(
+            m_dot_ox=m_dot_ox,
+            m_dot_fuel=m_dot_fuel,
+            rho_ox=rho_ox,
+            rho_fuel=rho_fuel,
+            dP_ox=dP_inj,
+            dP_fuel=dP_inj,
+            Cd_ox=Cd_ox,
+            Cd_fuel=Cd_fuel,
+            LD_fuel=LD_fuel,
+            mu_fuel=mu_fuel,
+            pintle_OD=pintle_OD,
+            n_fuel_orifices=n_fuel_orifices,
+        )
+
+    # ------------------------------------------------------------------
+    # Effective fuel Cd (constant or Lichtarowicz)
+    # ------------------------------------------------------------------
+
+    @property
+    def cd_fuel_effective(self) -> float:
+        """
+        Effective fuel-orifice discharge coefficient [-].
+
+        If ``Cd_fuel`` was supplied explicitly, returns it unchanged.
+        Otherwise runs the Lichtarowicz–Duggins–Markland (1965) fixed-point
+        iteration to find the Cd consistent with the Reynolds number of the
+        sized orifice.
+
+        Source: Lichtarowicz, A., Duggins, R.K. and Markland, E. (1965).
+                "Discharge coefficients for incompressible non-cavitating
+                flow through long orifices."
+                Proc. IMechE, J. Mech. Eng. Sci., Vol. 7, pp. 210–219.
+        """
+        if self.Cd_fuel is not None:
+            return self.Cd_fuel
+
+        # Deferred import to keep the module dependency graph clean.
+        from physics.injector.discharge import cd_iterative
+
+        assert self.mu_fuel is not None  # validated in __post_init__
+        m_dot_per = self.m_dot_fuel / self.n_fuel_orifices
+        _cd, _re = cd_iterative(
+            m_dot=m_dot_per,
+            rho=self.rho_fuel,
+            mu=self.mu_fuel,
+            dP=self.dP_fuel,
+            LD=self.LD_fuel,
+        )
+        return _cd
 
     # ------------------------------------------------------------------
     # Fuel orifice geometry
@@ -92,16 +244,16 @@ class PintleInjector:
         """
         return orifice_area_required(
             m_dot=self.m_dot_fuel,
-            Cd=self.Cd_fuel,
+            Cd=self.cd_fuel_effective,
             rho=self.rho_fuel,
-            dP=self.dP_inj,
+            dP=self.dP_fuel,
         )
 
     @property
     def fuel_orifice_area_single(self) -> float:
-        """Area of a single fuel orifice [m²].
+        """Area of one fuel orifice [m²].
 
-        Source: Sutton & Biblarz (2017), Ch. 8 — uniform orifice assumption.
+        Source: Sutton & Biblarz (2017), Ch. 8.
         """
         return self.fuel_orifice_area_total / self.n_fuel_orifices
 
@@ -109,8 +261,7 @@ class PintleInjector:
     def fuel_orifice_diameter(self) -> float:
         """Diameter of a single circular fuel orifice [m].
 
-        Derived from single orifice area assuming circular cross-section:
-        d = sqrt(4 * A / pi).
+        d = sqrt(4 · A_single / π).
 
         Source: Sutton & Biblarz (2017), Ch. 8.
         """
@@ -122,28 +273,29 @@ class PintleInjector:
 
     @property
     def lox_annulus_area(self) -> float:
-        """Total LOX annulus flow area [m²].
+        """LOX annulus flow area [m²].
 
         Source: Sutton & Biblarz (2017), Ch. 8, Eq. (8-1) rearranged.
+        Uses dP_ox (may differ from dP_fuel).
         """
         return orifice_area_required(
             m_dot=self.m_dot_ox,
             Cd=self.Cd_ox,
             rho=self.rho_ox,
-            dP=self.dP_inj,
+            dP=self.dP_ox,
         )
 
     @property
     def lox_annulus_OD(self) -> float:
         """Outer diameter of the LOX annulus [m].
 
-        The annulus area is A = pi/4 * (OD^2 - pintle_OD^2), solved for OD:
+        Solved from A = π/4·(OD² − pintle_OD²):
 
         .. math::
 
             OD = \\sqrt{pintle\\_OD^2 + \\frac{4 A}{\\pi}}
 
-        Source: Dressler & Bauer (2000), AIAA 2000-3871, annulus geometry.
+        Source: Dressler & Bauer (2000), AIAA 2000-3871.
         """
         return math.sqrt(
             self.pintle_OD**2 + 4.0 * self.lox_annulus_area / math.pi
@@ -151,9 +303,7 @@ class PintleInjector:
 
     @property
     def lox_annulus_gap(self) -> float:
-        """Radial gap of the LOX annulus [m].
-
-        gap = (OD - pintle_OD) / 2.
+        """Radial gap of the LOX annulus (= (OD − pintle_OD) / 2) [m].
 
         Source: Dressler & Bauer (2000), AIAA 2000-3871.
         """
@@ -165,9 +315,9 @@ class PintleInjector:
 
     @property
     def V_ox(self) -> float:
-        """Mean LOX injection velocity [m/s].
+        """Mean LOX injection velocity from continuity [m/s].
 
-        Computed from continuity: V = m_dot / (rho * A).
+        V = m_dot / (ρ · A).
 
         Source: Sutton & Biblarz (2017), Ch. 8.
         """
@@ -179,9 +329,9 @@ class PintleInjector:
 
     @property
     def V_fuel(self) -> float:
-        """Mean fuel injection velocity [m/s].
+        """Mean fuel injection velocity from continuity [m/s].
 
-        Computed from continuity: V = m_dot / (rho * A).
+        V = m_dot / (ρ · A).
 
         Source: Sutton & Biblarz (2017), Ch. 8.
         """
@@ -197,45 +347,72 @@ class PintleInjector:
 
     @property
     def TMR(self) -> float:
-        """Total Momentum Ratio: rho_ox * V_ox^2 / (rho_fuel * V_fuel^2) [-].
+        """
+        Total Momentum Ratio: (ṁ_fuel · V_fuel) / (ṁ_ox · V_ox) [-].
 
-        TMR characterises the relative radial momentum of the two streams.
-        TMR = 1.0 indicates matched momentum — a common design target for
-        pintle injectors. With equal Cd and equal dP on both streams, TMR = 1.0
-        exactly (algebraic identity).
+        Defined as the ratio of fuel radial momentum to oxidiser radial
+        momentum per Dressler & Bauer (2000).  Using V = Cd · sqrt(2·dP/ρ)
+        this expands to:
+
+        .. math::
+
+            TMR = \\frac{1}{MR}
+                  \\cdot \\frac{C_{d,f}}{C_{d,ox}}
+                  \\cdot \\sqrt{\\frac{\\rho_{ox}}{\\rho_f}
+                               \\cdot \\frac{\\Delta P_f}{\\Delta P_{ox}}}
+
+        where :math:`MR = \\dot{m}_{ox} / \\dot{m}_f`.
+
+        Design guidance (Dressler & Bauer): 0.5 ≤ TMR ≤ 2.0.
+
+        **Why the old result was TMR = 1.000**
+
+        The earlier implementation used ρ_ox·V_ox² / (ρ_f·V_f²), a dynamic-
+        pressure ratio.  Substituting V = Cd·sqrt(2·dP/ρ) gives
+        Cd_ox²·dP_ox / (Cd_f²·dP_f), which is completely independent of
+        densities and mass flows.  With equal Cd and equal dP the formula
+        trivially returns 1.000 for *any* propellant combination.  The correct
+        momentum-ratio formula carries the density and MR dependence that make
+        TMR a meaningful design variable.
+
+        Reference engine (equal Cd, equal dP, MR = 3.6, ρ_ox/ρ_f = 2.89):
+            TMR = (1/3.6) · 1 · sqrt(2.89) ≈ 0.47
 
         Source: Dressler, G.A. and Bauer, J.M. (2000). "TRW Pintle Engine
-                Heritage and Performance Characteristics." AIAA 2000-3871.
-                Section 3 — TMR definition.
+                Heritage and Performance Characteristics." AIAA 2000-3871,
+                Section 3.
         """
-        return (self.rho_ox * self.V_ox**2) / (self.rho_fuel * self.V_fuel**2)
+        return (self.m_dot_fuel * self.V_fuel) / (self.m_dot_ox * self.V_ox)
 
     # ------------------------------------------------------------------
     # Summary report
     # ------------------------------------------------------------------
 
     def summary(self) -> str:
-        """Return a formatted multi-line summary in engineering units.
-
-        Returns a string (does not print). Caller is responsible for output.
-        """
+        """Return a formatted multi-line summary in engineering units."""
+        psi = 6_894.7572931783
         d_mm = self.fuel_orifice_diameter * 1e3
         lox_od_mm = self.lox_annulus_OD * 1e3
         lox_gap_mm = self.lox_annulus_gap * 1e3
         pintle_od_mm = self.pintle_OD * 1e3
 
         lines = [
-            "=" * 55,
+            "=" * 60,
             "  Pintle Injector Summary",
-            "=" * 55,
+            "=" * 60,
             "  Inputs",
             f"    m_dot_fuel          : {self.m_dot_fuel:.4f} kg/s",
             f"    m_dot_ox            : {self.m_dot_ox:.4f} kg/s",
+            f"    MR (ox/fuel)        : {self.m_dot_ox/self.m_dot_fuel:.3f}",
             f"    rho_fuel            : {self.rho_fuel:.1f} kg/m³",
             f"    rho_ox              : {self.rho_ox:.1f} kg/m³",
-            f"    dP_inj              : {self.dP_inj / 1e6:.4f} MPa  "
-            f"({self.dP_inj / 6894.7572:.1f} psi)",
-            f"    Cd_fuel / Cd_ox     : {self.Cd_fuel} / {self.Cd_ox}",
+            f"    dP_fuel             : {self.dP_fuel / 1e6:.4f} MPa"
+            f"  ({self.dP_fuel / psi:.1f} psi)",
+            f"    dP_ox               : {self.dP_ox / 1e6:.4f} MPa"
+            f"  ({self.dP_ox / psi:.1f} psi)",
+            f"    dP_fuel / dP_ox     : {self.dP_fuel / self.dP_ox:.3f}",
+            f"    Cd_fuel (eff)       : {self.cd_fuel_effective:.4f}",
+            f"    Cd_ox               : {self.Cd_ox:.4f}",
             f"    pintle OD           : {pintle_od_mm:.2f} mm",
             f"    n_fuel_orifices     : {self.n_fuel_orifices}",
             "",
@@ -253,6 +430,6 @@ class PintleInjector:
             "",
             "  Mixing",
             f"    TMR                 : {self.TMR:.4f}",
-            "=" * 55,
+            "=" * 60,
         ]
         return "\n".join(lines)

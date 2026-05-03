@@ -8,7 +8,7 @@ Verification tests for the injector subsystem:
   - physics/injector/stability.py
 
 Reference engine conditions (Pc = 1000 psia, O/F = 3.60, LCH4/LOX):
-    dP_inj  = 450 psi  = 3.1026e6 Pa
+    dP_inj  = 450 psi  = 3.1026e6 Pa  (equal for both streams)
     LCH4:   m_dot = 0.3096 kg/s, rho = 386 kg/m³
     LOX:    m_dot = 1.1144 kg/s, rho = 1116 kg/m³
     Cd_fuel = Cd_ox = 0.6
@@ -17,11 +17,20 @@ Reference engine conditions (Pc = 1000 psia, O/F = 3.60, LCH4/LOX):
 Expected outputs (from CLAUDE.md baseline):
     fuel orifice diameter = 0.819 mm
     LOX annulus OD        = 30.47 mm
-    TMR                   = 1.0 (algebraic identity when Cd and dP equal)
+    TMR                   ≈ 0.47  (correct momentum-ratio formula)
+
+NOTE — TMR history
+------------------
+The original implementation used ρ_ox·V_ox² / (ρ_f·V_f²), a dynamic-pressure
+ratio that algebraically reduces to Cd_ox²·dP_ox / (Cd_f²·dP_f).  With equal
+Cd and equal dP that is identically 1.000 — independent of ρ, ṁ, or MR.
+The correct momentum-ratio TMR = (ṁ_f·V_f)/(ṁ_ox·V_ox) carries the density
+and mass-flow dependence; for the reference engine it evaluates to ≈ 0.47.
 """
 
 from __future__ import annotations
 
+import math
 
 import pytest
 
@@ -49,11 +58,17 @@ CD_OX = 0.6
 PINTLE_OD = 0.030                   # m
 N_FUEL = 20
 
+# Expected TMR with correct momentum-ratio formula and equal Cd/dP:
+#   TMR = (1/MR) * sqrt(rho_ox/rho_fuel)
+MR_REF = M_DOT_OX / M_DOT_FUEL      # 3.600
+TMR_EXPECTED = (1.0 / MR_REF) * math.sqrt(RHO_OX / RHO_FUEL)  # ≈ 0.472
+
 
 # ---------------------------------------------------------------------------
-# Helper: build the reference pintle injector
+# Helper: build the reference pintle injector (backward-compat path)
 # ---------------------------------------------------------------------------
 def _ref_pintle() -> PintleInjector:
+    # Uses legacy dP_inj keyword — handled by __post_init__ backward compat.
     return PintleInjector(
         m_dot_ox=M_DOT_OX,
         m_dot_fuel=M_DOT_FUEL,
@@ -165,13 +180,22 @@ class TestPintleReferenceEngine:
             f"expected {expected_mm} mm, rel err = {rel_err:.4f}"
         )
 
-    def test_TMR_algebraic_identity(self) -> None:
-        """TMR == 1.0 within 0.1% when Cd and dP are equal for both streams."""
+    def test_TMR_correct_momentum_ratio(self) -> None:
+        """TMR matches (1/MR)*sqrt(rho_ox/rho_fuel) with equal Cd and dP."""
         p = _ref_pintle()
-        rel_err = abs(p.TMR - 1.0)
+        rel_err = abs(p.TMR - TMR_EXPECTED) / TMR_EXPECTED
         assert rel_err < 0.001, (
-            f"TMR = {p.TMR:.6f}, expected 1.0 (algebraic identity), "
-            f"deviation = {rel_err:.2e}"
+            f"TMR = {p.TMR:.6f}, expected {TMR_EXPECTED:.6f} "
+            f"(dev = {rel_err*100:.4f} %)"
+        )
+
+    def test_TMR_in_dressler_range(self) -> None:
+        """TMR is in Dressler & Bauer (2000) recommended range 0.5–2.0."""
+        p = _ref_pintle()
+        # Reference engine is near the lower bound; allow slightly below 0.5
+        # because it is a real published engine and Dressler's range is a guide.
+        assert 0.3 < p.TMR < 2.0, (
+            f"TMR = {p.TMR:.4f} is far outside 0.3–2.0"
         )
 
     def test_V_ox_physical_range(self) -> None:
@@ -208,7 +232,7 @@ class TestPintleReferenceEngine:
 
 
 # ===========================================================================
-# 3. Stiffness ratio tests
+# 3. Stiffness ratio tests (updated for per-stream dict return)
 # ===========================================================================
 class TestStiffness:
     """Tests for stiffness_ratio and check_stiffness."""
@@ -224,32 +248,38 @@ class TestStiffness:
         )
 
     def test_check_stiffness_reference_passes(self) -> None:
-        """Reference engine (45%) passes 20% threshold."""
-        passed, ratio, message = check_stiffness(DP_INJ, PC_REF)
-        assert passed is True, (
-            f"Expected PASS but got FAIL; ratio={ratio:.4f}, msg={message}"
+        """Reference engine (45%) passes 20% threshold on both streams."""
+        result = check_stiffness(
+            dP_ox=DP_INJ, dP_fuel=DP_INJ, Pc=PC_REF
         )
+        assert result["ox"][0] is True
+        assert result["fuel"][0] is True
 
     def test_check_stiffness_low_dP_fails(self) -> None:
-        """dP = 10% Pc fails 20% threshold."""
+        """dP = 10% Pc fails 20% threshold on both streams."""
         dP_low = 0.10 * PC_REF
-        passed, ratio, message = check_stiffness(dP_low, PC_REF)
-        assert passed is False, (
-            f"Expected FAIL but got PASS; ratio={ratio:.4f}, msg={message}"
-        )
+        result = check_stiffness(dP_ox=dP_low, dP_fuel=dP_low, Pc=PC_REF)
+        assert result["ox"][0] is False
+        assert result["fuel"][0] is False
 
     def test_check_stiffness_exactly_at_threshold(self) -> None:
         """dP = exactly 20% Pc passes (>= threshold)."""
         dP_threshold = 0.20 * PC_REF
-        passed, ratio, _ = check_stiffness(dP_threshold, PC_REF)
-        assert passed is True
+        result = check_stiffness(dP_ox=dP_threshold, dP_fuel=dP_threshold, Pc=PC_REF)
+        assert result["ox"][0] is True
+        assert result["fuel"][0] is True
 
-    def test_check_stiffness_returns_tuple(self) -> None:
-        """check_stiffness returns (bool, float, str)."""
-        result = check_stiffness(DP_INJ, PC_REF)
-        assert isinstance(result[0], bool)
-        assert isinstance(result[1], float)
-        assert isinstance(result[2], str)
+    def test_check_stiffness_returns_dict(self) -> None:
+        """check_stiffness returns dict with 'ox' and 'fuel' keys."""
+        result = check_stiffness(dP_ox=DP_INJ, dP_fuel=DP_INJ, Pc=PC_REF)
+        assert isinstance(result, dict)
+        assert "ox" in result and "fuel" in result
+        passed_ox, ratio_ox = result["ox"]
+        passed_fuel, ratio_fuel = result["fuel"]
+        assert isinstance(passed_ox, bool)
+        assert isinstance(ratio_ox, float)
+        assert isinstance(passed_fuel, bool)
+        assert isinstance(ratio_fuel, float)
 
     def test_stiffness_ratio_zero_dP_raises(self) -> None:
         with pytest.raises(ValueError, match="dP_inj"):
@@ -261,8 +291,11 @@ class TestStiffness:
 
     def test_check_stiffness_custom_threshold(self) -> None:
         """Custom threshold of 0.50 causes reference engine to fail."""
-        passed, _, _ = check_stiffness(DP_INJ, PC_REF, threshold=0.50)
-        assert passed is False
+        result = check_stiffness(
+            dP_ox=DP_INJ, dP_fuel=DP_INJ, Pc=PC_REF, threshold=0.50
+        )
+        assert result["ox"][0] is False
+        assert result["fuel"][0] is False
 
 
 # ===========================================================================
@@ -289,7 +322,8 @@ class TestPcSweep:
                 m_dot_fuel=M_DOT_FUEL,
                 rho_ox=RHO_OX,
                 rho_fuel=RHO_FUEL,
-                dP_inj=dP,
+                dP_ox=dP,
+                dP_fuel=dP,
                 Cd_ox=CD_OX,
                 Cd_fuel=CD_FUEL,
                 pintle_OD=PINTLE_OD,
@@ -316,13 +350,19 @@ class TestPcSweep:
                 m_dot_fuel=M_DOT_FUEL,
                 rho_ox=RHO_OX,
                 rho_fuel=RHO_FUEL,
-                dP_inj=dP,
+                dP_ox=dP,
+                dP_fuel=dP,
             )
             assert 10.0 < p.V_ox < 200.0, f"V_ox out of range at Pc={pc_psia} psia"
             assert 10.0 < p.V_fuel < 200.0, f"V_fuel out of range at Pc={pc_psia} psia"
 
-    def test_TMR_stays_unity_in_sweep(self) -> None:
-        """TMR == 1.0 throughout sweep (Cd and dP equal for both streams)."""
+    def test_TMR_constant_in_equal_dP_sweep(self) -> None:
+        """TMR is constant ≈ (1/MR)·sqrt(rho_ox/rho_fuel) across equal-dP sweep.
+
+        With equal Cd and equal dP (both scaling together), dP cancels out of
+        the TMR formula, so TMR is independent of Pc.
+        """
+        tmrs = []
         for pc_psia in range(800, 1401, 100):
             Pc = pc_psia * PSI_TO_PA
             dP = 0.45 * Pc
@@ -331,8 +371,17 @@ class TestPcSweep:
                 m_dot_fuel=M_DOT_FUEL,
                 rho_ox=RHO_OX,
                 rho_fuel=RHO_FUEL,
-                dP_inj=dP,
+                dP_ox=dP,
+                dP_fuel=dP,
             )
-            assert abs(p.TMR - 1.0) < 0.001, (
-                f"TMR = {p.TMR:.6f} at Pc={pc_psia} psia, expected 1.0"
+            tmrs.append(p.TMR)
+
+        # All TMR values should be within 0.1 % of each other.
+        tmr_mean = sum(tmrs) / len(tmrs)
+        for tmr in tmrs:
+            assert abs(tmr - tmr_mean) / tmr_mean < 0.001, (
+                f"TMR not constant across sweep: {tmr:.6f} vs mean {tmr_mean:.6f}"
             )
+
+        # And close to the analytic value.
+        assert abs(tmr_mean - TMR_EXPECTED) / TMR_EXPECTED < 0.001

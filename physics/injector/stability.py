@@ -5,15 +5,17 @@ stability.py
 Injector stability criteria for liquid rocket engines.
 
 The stiffness ratio (dP_inj / Pc) is the primary hydraulic stability
-parameter. A high stiffness ratio decouples chamber pressure oscillations
+parameter.  A high stiffness ratio decouples chamber pressure oscillations
 from propellant flow rate, preventing feed-system coupled instability.
 
-Source
-------
+Oxidiser and fuel streams are now checked independently so that a designer
+can identify which stream is the marginal one.
+
+Sources
+-------
     Huzel, D.K. and Huang, D.H. (1992). *Modern Engineering for Design of
     Liquid-Propellant Rocket Engines.* NASA SP-125 (revised). Chapter 6,
-    "Design of Liquid Propellant Rocket Engines." Section 6.3 — injector
-    stability, stiffness criterion.
+    Section 6.3 — injector stability, stiffness criterion.
 
     NASA SP-8089 (1976). *Liquid Rocket Engine Injectors.* Section 4.2 —
     hydraulic stability, minimum dP/Pc requirement.
@@ -70,15 +72,18 @@ def stiffness_ratio(dP_inj: float, Pc: float) -> float:
 
 
 def check_stiffness(
-    dP_inj: float,
+    dP_ox: float,
+    dP_fuel: float,
     Pc: float,
     threshold: float = 0.20,
-) -> tuple[bool, float, str]:
+) -> dict[str, tuple[bool, float]]:
     """
-    Check whether the injector stiffness ratio meets the minimum threshold.
+    Check injector stiffness for oxidiser and fuel streams independently.
 
-    Evaluates dP_inj / Pc against the supplied threshold (default 0.20 = 20%).
-    Returns a structured result suitable for automated design checks.
+    Evaluates dP_ox / Pc and dP_fuel / Pc against the minimum threshold
+    (default 0.20 = 20%, per Huzel & Huang Ch. 6 and NASA SP-8089 §4.2).
+    Returns a per-stream result so the designer can identify which side is
+    marginal when the two streams carry different pressure drops.
 
     Source: Huzel, D.K. and Huang, D.H. (1992). *Modern Engineering for
             Design of Liquid-Propellant Rocket Engines.* NASA SP-125,
@@ -87,8 +92,10 @@ def check_stiffness(
 
     Parameters
     ----------
-    dP_inj : float
-        Injector pressure drop [Pa].
+    dP_ox : float
+        Oxidiser injector pressure drop [Pa].
+    dP_fuel : float
+        Fuel injector pressure drop [Pa].
     Pc : float
         Chamber pressure [Pa].
     threshold : float, optional
@@ -96,34 +103,23 @@ def check_stiffness(
 
     Returns
     -------
-    passed : bool
-        True if stiffness ratio >= threshold.
-    ratio : float
-        Computed dP_inj / Pc.
-    message : str
-        Human-readable assessment string.
+    dict[str, tuple[bool, float]]
+        ``{"ox": (passed, ratio), "fuel": (passed, ratio)}``
+        where *passed* is True when ratio >= threshold.
 
     Examples
     --------
-    >>> passed, ratio, msg = check_stiffness(3.1026e6, 6.8948e6)
-    >>> passed
+    >>> result = check_stiffness(3.1026e6, 3.1026e6, 6.8948e6)
+    >>> result["ox"][0]   # passed
     True
-    >>> abs(ratio - 0.45) < 0.01
+    >>> abs(result["ox"][1] - 0.45) < 0.01   # ratio
+    True
+    >>> result["fuel"][0]
     True
     """
-    ratio = stiffness_ratio(dP_inj, Pc)
-    passed = ratio >= threshold
-
-    if passed:
-        message = (
-            f"PASS — stiffness ratio {ratio:.3f} >= threshold {threshold:.3f} "
-            f"(Huzel & Huang Ch. 6 / NASA SP-8089 §4.2)"
-        )
-    else:
-        message = (
-            f"FAIL — stiffness ratio {ratio:.3f} < threshold {threshold:.3f} "
-            f"(Huzel & Huang Ch. 6 / NASA SP-8089 §4.2): "
-            f"risk of feed-coupled combustion instability"
-        )
-
-    return passed, ratio, message
+    ratio_ox = stiffness_ratio(dP_ox, Pc)
+    ratio_fuel = stiffness_ratio(dP_fuel, Pc)
+    return {
+        "ox": (ratio_ox >= threshold, ratio_ox),
+        "fuel": (ratio_fuel >= threshold, ratio_fuel),
+    }
