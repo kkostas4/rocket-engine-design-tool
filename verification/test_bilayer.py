@@ -26,6 +26,7 @@ from physics.structural.bilayer import (
     bilayer_stress_profile,
     size_jacket_thickness,
 )
+from physics.structural.fatigue import manson_coffin_life  # noqa: E402
 from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
 
 # ---------------------------------------------------------------------------
@@ -436,3 +437,129 @@ class TestOutputKeys:
         for k, v in sol.items():
             if hasattr(v, "__len__"):
                 assert len(v) == n, f"{k}: expected len {n}, got {len(v)}"
+
+
+# ---------------------------------------------------------------------------
+# 7. LCF life at the exit station (x = 83.5 mm) — regression
+# ---------------------------------------------------------------------------
+class TestExitLCF:
+    """
+    LCF life at the exit plane (x = 83.5 mm) using the bilayer liner strain range.
+
+    Baseline run (2026-05-06, n_stations=100, GRCop-84 proxy):
+        T_wall_gas    = 559.2 K
+        T_wall_cool   = 545.3 K
+        T_coolant_inlet = 150.0 K   (counterflow, last element)
+        alpha(T_mean) = 17.00e-6 /K
+        delta_eps_total   = 0.6956 %
+        delta_eps_elastic = 0.2013 %
+        delta_eps_plastic = 0.4943 %
+        N_f           = 6104 cycles
+        margin_lcf    = 60.04  (pass vs 100-cycle requirement)
+
+    The exit plane has lower thermal strain range than the throat
+    (T_gas = 559 K vs 922 K at throat) so N_f is ~6x longer.
+    Both stations operate in the LCF regime (above yield); the throat governs.
+
+    Source: Manson-Coffin-Morrow equation, fatigue.py;
+            NASA SP-8087 (1977) §4.4 (thermal strain range).
+    """
+
+    # Reference values locked in from the baseline run above.
+    # Tolerance 5 % covers any minor changes to the regen solver or material
+    # property interpolation without masking real regressions.
+    _N_F_REF = 6104.0    # cycles
+    _TOL = 0.05          # 5 %
+
+    def _compute_exit_lcf(self) -> dict:
+        """Compute LCF inputs and N_f at the exit station."""
+        regen = _get_regen()
+        x_arr = regen["x"]
+        i_exit = int(np.argmax(x_arr))
+
+        T_g = float(regen["T_wall_gas"][i_exit])
+        T_c = float(regen["T_wall_coolant"][i_exit])
+        # Counterflow: coolant inlet is the last element of T_coolant array
+        T_inlet = float(regen["T_coolant"][-1])
+
+        T_mean = 0.5 * (T_g + T_c)
+        al = GRCOP84_PROXY.alpha(T_mean)
+        E_g = GRCOP84_PROXY.E(T_g)
+        sy_g = GRCOP84_PROXY.sigma_y(T_g)
+
+        de_total = al * (T_g - T_inlet)
+        de_e = min(de_total, sy_g / E_g)
+        de_p = max(0.0, de_total - de_e)
+
+        N_f = manson_coffin_life(
+            strain_range_plastic=de_p,
+            strain_range_elastic=de_e,
+            material=GRCOP84_PROXY,
+        )
+        margin = N_f / 100.0 - 1.0
+
+        return {
+            "i_exit": i_exit,
+            "x_mm": float(x_arr[i_exit]) * 1e3,
+            "T_gas": T_g,
+            "T_cool": T_c,
+            "T_inlet": T_inlet,
+            "delta_eps_total": de_total,
+            "delta_eps_elastic": de_e,
+            "delta_eps_plastic": de_p,
+            "N_f": N_f,
+            "margin_lcf": margin,
+        }
+
+    def test_exit_lcf_nf_regression(self) -> None:
+        """N_f at exit matches the locked-in baseline within 5 %.
+
+        Regression guard: if the regen solver, material model, or fatigue
+        parameters change in a way that shifts N_f by > 5 %, this test
+        will catch it and require an explicit update to _N_F_REF.
+        """
+        result = self._compute_exit_lcf()
+        N_f = result["N_f"]
+        rel_err = abs(N_f - self._N_F_REF) / self._N_F_REF
+        assert rel_err < self._TOL, (
+            f"N_f at exit = {N_f:.0f} cycles, baseline = {self._N_F_REF:.0f} cycles "
+            f"(rel err = {rel_err*100:.1f} % > tolerance {self._TOL*100:.0f} %)"
+        )
+
+    def test_exit_lcf_passes_100_cycle_requirement(self) -> None:
+        """Exit station LCF margin >= 0 against the 100-cycle design life.
+
+        N_f ~ 6100 >> 100 cycles; margin ~ 60.  The exit plane is not the
+        governing LCF station (throat at x=0 is worst with N_f ~ 1000).
+        """
+        result = self._compute_exit_lcf()
+        assert result["margin_lcf"] >= 0.0, (
+            f"Exit LCF margin = {result['margin_lcf']:.3f} (must be >= 0)"
+        )
+
+    def test_exit_lcf_strain_below_throat(self) -> None:
+        """Exit thermal strain range < throat strain range.
+
+        T_gas at exit (~559 K) << T_gas at throat (~922 K), so exit
+        delta_epsilon must be smaller, confirming the throat governs.
+        """
+        regen = _get_regen()
+        x_arr = regen["x"]
+        T_cool_arr = regen["T_coolant"]
+        T_inlet = float(T_cool_arr[-1])
+
+        i_exit = int(np.argmax(x_arr))
+        i_throat = int(np.argmin(np.abs(x_arr)))
+
+        def _strain(i: int) -> float:
+            T_g = float(regen["T_wall_gas"][i])
+            T_c = float(regen["T_wall_coolant"][i])
+            al = GRCOP84_PROXY.alpha(0.5 * (T_g + T_c))
+            return al * (T_g - T_inlet)
+
+        de_exit = _strain(i_exit)
+        de_throat = _strain(i_throat)
+        assert de_exit < de_throat, (
+            f"Exit strain {de_exit*100:.3f} % should be < throat strain "
+            f"{de_throat*100:.3f} %"
+        )
