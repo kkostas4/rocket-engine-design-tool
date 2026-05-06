@@ -55,6 +55,7 @@ from physics.structural.bilayer import (
     bilayer_stress_profile,
     size_jacket_thickness,
 )
+from physics.structural.fatigue import lcf_check, manson_coffin_life
 from physics.structural.liner_stress import liner_stress_profile
 from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
 
@@ -283,6 +284,69 @@ print(f"    Bilayer liner sigma_vm: {bl_vm_in_exit/1e6:.1f} MPa"
       f"  hoop = {bl_sh_in_exit/1e6:.1f} MPa (TENSILE, LCF regime)")
 print(f"    Bilayer jacket sigma_vm:{bl_vm_jkt_exit/1e6:.1f} MPa"
       f"  margin = {bilayer_sol['margin_yield_jacket'][i_exit]:.2f} (positive)")
+print()
+print("  Out-of-scope (flagged for future work):")
+print("    - Differential thermal expansion between liner and jacket is NOT included:")
+print("      liner runs hotter, wants to expand more -> adds compression to liner,")
+print("      tension to jacket. Requires coupled FEA. Flagged for future work.")
+print()
+
+# ---------------------------------------------------------------------------
+# LCF at throat (worst station) and exit station
+# ---------------------------------------------------------------------------
+print("  LCF PREDICTION (Manson-Coffin, bilayer liner, GRCop-84 proxy)")
+print("  " + "-" * 68)
+
+# ---- Worst station (throat) via lcf_check() ----
+lcf_throat = lcf_check(
+    regen_solution=regen,
+    structural_solution=bilayer_sol,   # uses T_gas/T_cool from regen
+    n_cycles_required=100,
+    material=GRCOP84_PROXY,
+)
+flag_throat = "pass" if lcf_throat["passes"] else "FAIL ***"
+print("  Worst station (throat)")
+print(f"    x             : {lcf_throat['x_worst']*1e3:.1f} mm")
+print(f"    T_wall_gas    : {lcf_throat['T_gas_worst']:.0f} K")
+print(f"    delta_eps     : {lcf_throat['delta_epsilon_thermal']*100:.3f} %"
+      f"  (plastic: {lcf_throat['delta_epsilon_plastic']*100:.3f} %)")
+print(f"    N_f predicted : {lcf_throat['N_f']:.0f} cycles")
+print(f"    margin_lcf    : {lcf_throat['margin_lcf']:.2f}  [{flag_throat}]")
+print()
+
+# ---- Exit station (x = 83.5 mm) ----
+T_wg_arr = regen["T_wall_gas"]
+T_wc_arr = regen["T_wall_coolant"]
+T_inlet = float(regen["T_coolant"][-1])  # counterflow: inlet = last element
+
+T_g_exit = float(T_wg_arr[i_exit])
+T_c_exit = float(T_wc_arr[i_exit])
+T_mean_exit = 0.5 * (T_g_exit + T_c_exit)
+al_exit = GRCOP84_PROXY.alpha(T_mean_exit)
+E_exit = GRCOP84_PROXY.E(T_g_exit)
+sy_exit = GRCOP84_PROXY.sigma_y(T_g_exit)
+
+de_total_exit = al_exit * (T_g_exit - T_inlet)
+de_e_exit = min(de_total_exit, sy_exit / E_exit)
+de_p_exit = max(0.0, de_total_exit - de_e_exit)
+Nf_exit = manson_coffin_life(
+    strain_range_plastic=de_p_exit,
+    strain_range_elastic=de_e_exit,
+    material=GRCOP84_PROXY,
+)
+margin_exit = Nf_exit / 100.0 - 1.0
+flag_exit = "pass" if margin_exit >= 0.0 else "FAIL ***"
+tight_flag = "  [FLAG: margin < 4, check exit liner design]" if 0.0 <= margin_exit < 4.0 else ""
+
+print(f"  Exit station (x = {x_mm[i_exit]:.1f} mm)")
+print(f"    T_wall_gas    : {T_g_exit:.0f} K")
+print(f"    delta_eps     : {de_total_exit*100:.3f} %"
+      f"  (plastic: {de_p_exit*100:.3f} %)")
+print(f"    N_f predicted : {Nf_exit:.0f} cycles")
+print(f"    margin_lcf    : {margin_exit:.2f}  [{flag_exit}]{tight_flag}")
+print()
+print(f"  LCF governing station: THROAT (N_f_throat/N_f_exit = "
+      f"{lcf_throat['N_f']:.0f}/{Nf_exit:.0f} = {lcf_throat['N_f']/Nf_exit:.2f}x worse)")
 print()
 print("  Out-of-scope (flagged for future work):")
 print("    - Differential thermal expansion stress between liner and jacket")

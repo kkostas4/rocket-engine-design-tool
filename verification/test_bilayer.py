@@ -563,3 +563,47 @@ class TestExitLCF:
             f"Exit strain {de_exit*100:.3f} % should be < throat strain "
             f"{de_throat*100:.3f} %"
         )
+
+
+def test_lcf_at_exit_passes_100_cycles() -> None:
+    """
+    LCF life at x = 83.5 mm (exit) passes the 100-cycle design requirement.
+
+    This is the explicit named test requested by the structural close-out.
+    It mirrors TestExitLCF.test_exit_lcf_passes_100_cycle_requirement but
+    lives at module level for direct discoverability.
+
+    Baseline (2026-05-06): N_f ≈ 6104 cycles, margin ≈ 60.0.
+    Exit is not the governing station — the throat (N_f ≈ 1036) governs.
+
+    Source: Manson-Coffin-Morrow; NASA SP-8087 (1977) §4.4.
+    """
+    regen = _get_regen()
+    x_arr = regen["x"]
+    i_exit = int(np.argmax(x_arr))
+
+    T_g = float(regen["T_wall_gas"][i_exit])
+    T_c = float(regen["T_wall_coolant"][i_exit])
+    T_inlet = float(regen["T_coolant"][-1])  # counterflow: inlet = last element
+
+    T_mean = 0.5 * (T_g + T_c)
+    al = GRCOP84_PROXY.alpha(T_mean)
+    E_g = GRCOP84_PROXY.E(T_g)
+    sy_g = GRCOP84_PROXY.sigma_y(T_g)
+
+    de_total = al * (T_g - T_inlet)
+    de_e = min(de_total, sy_g / E_g)
+    de_p = max(0.0, de_total - de_e)
+
+    N_f = manson_coffin_life(
+        strain_range_plastic=de_p,
+        strain_range_elastic=de_e,
+        material=GRCOP84_PROXY,
+    )
+    margin = N_f / 100.0 - 1.0
+
+    assert margin >= 0.0, (
+        f"Exit LCF margin = {margin:.3f}  (N_f = {N_f:.0f} cycles, "
+        f"required 100 cycles).  Exit liner LCF FAILS — consider thicker "
+        f"exit-plane liner or staged coolant to reduce thermal swing."
+    )
