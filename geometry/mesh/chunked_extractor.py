@@ -126,7 +126,7 @@ def chunked_sdf_to_mesh(
                 trimesh.Trimesh(vertices=verts_s, faces=faces_s, process=False)
             )
             if verbose:
-                print(f"  → {len(verts_s):,} verts, {len(faces_s):,} faces")
+                print(f"  -> {len(verts_s):,} verts, {len(faces_s):,} faces")
 
         except ValueError as exc:
             # Slab entirely inside solid or entirely outside — skip silently

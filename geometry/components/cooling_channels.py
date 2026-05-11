@@ -193,13 +193,19 @@ def all_channels_sdf(
     _h_ch = _build_interp(channel_geometry.height, z_arr)
     _w_ch = _build_interp(channel_geometry.width, z_arr)
 
+    phi32 = np.float32(phi)
+    z_min32 = np.float32(z_min)
+    z_max32 = np.float32(z_max)
+
     def _f(x, y, z):
+        # Keep all intermediates in float32 to cap memory at ~4 bytes/voxel.
+        # Scipy interpolants return float64; cast immediately after each call.
         x_ = np.asarray(x, dtype=np.float32)
         y_ = np.asarray(y, dtype=np.float32)
         z_ = np.asarray(z, dtype=np.float32)
 
-        rho = np.sqrt(x_ * x_ + y_ * y_).astype(np.float64)
-        theta = np.arctan2(y_.astype(np.float64), x_.astype(np.float64))
+        rho = np.sqrt(x_ * x_ + y_ * y_)
+        theta = np.arctan2(y_, x_)
 
         # Map θ into nearest sector centre via modular arithmetic.
         # theta_mod ∈ [0, phi).  If theta_mod < phi/2 the nearest channel
@@ -207,24 +213,23 @@ def all_channels_sdf(
         # the nearest channel is at phi and the local offset is
         # theta_mod - phi (negative).  This makes |theta_local| the actual
         # angular distance to the nearest channel centre.
-        theta_mod = np.mod(theta, phi)                              # [0, phi)
-        theta_local = np.where(theta_mod < phi * 0.5,               # (-phi/2, phi/2]
+        theta_mod = np.mod(theta, phi32)                              # [0, phi)
+        theta_local = np.where(theta_mod < phi32 * np.float32(0.5),  # (-phi/2, phi/2]
                                theta_mod,
-                               theta_mod - phi)
+                               theta_mod - phi32)
 
-        z_c = np.clip(z_.astype(np.float64), z_min, z_max)
-        r_in = _r_inner(z_c)
-        h = _h_ch(z_c)
-        w = _w_ch(z_c)
-        r_mean = r_in + h * 0.5
-        dtheta_half = w / (2.0 * r_mean)
+        z_c = np.clip(z_, z_min32, z_max32)
+        r_in = _r_inner(z_c).astype(np.float32)
+        h = _h_ch(z_c).astype(np.float32)
+        w = _w_ch(z_c).astype(np.float32)
+        r_mean = r_in + h * np.float32(0.5)
+        dtheta_half = w / (np.float32(2.0) * r_mean)
 
         f_rad = np.maximum(r_in - rho, rho - (r_in + h))
         f_ang = (np.abs(theta_local) - dtheta_half) * r_mean
-        f_axial = np.maximum(z_min - z_.astype(np.float64),
-                             z_.astype(np.float64) - z_max)
+        f_axial = np.maximum(z_min32 - z_, z_ - z_max32)
 
-        return np.maximum(np.maximum(f_rad, f_ang), f_axial).astype(np.float32)
+        return np.maximum(np.maximum(f_rad, f_ang), f_axial)
 
     return _f
 

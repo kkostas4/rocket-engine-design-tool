@@ -33,6 +33,7 @@ import warnings
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import numpy as np
 import trimesh  # type: ignore[import-untyped]
 
 from geometry.components.cooling_channels import chamber_with_channels_sdf
@@ -150,7 +151,7 @@ print(f"  n_channels    : {profile['n_channels']}")
 # ---------------------------------------------------------------------------
 # Bounding box
 # ---------------------------------------------------------------------------
-VOXEL_SIZE = 1e-4   # 0.1 mm
+VOXEL_SIZE = 1e-4   # 0.1 mm — SDF intermediates are float32 so peak ~1.1 GB
 
 bbox = adaptive_bbox(
     nozzle_x_min=profile["z_min"],
@@ -174,7 +175,7 @@ with warnings.catch_warnings():
         sdf,
         bbox,
         voxel_size=VOXEL_SIZE,
-        slab_axial_steps=100,
+        slab_axial_steps=25,   # 25 → 2.5 mm slabs; ~94 MB per float32 array, ~1.1 GB peak
         verbose=True,
     )
 print(f"\n  Extraction time: {time.perf_counter()-t0:.1f} s")
@@ -187,15 +188,18 @@ TARGET_FACES = 500_000
 if len(faces) > TARGET_FACES:
     print(f"\nDecimating to ~{TARGET_FACES//1000}K faces ...")
     t0 = time.perf_counter()
-    mesh_full = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
-    frac = TARGET_FACES / len(faces)
-    mesh_dec = mesh_full.simplify_quadric_decimation(
-        face_count=TARGET_FACES
-    )
-    verts = np.array(mesh_dec.vertices, dtype=np.float64)
-    faces = np.array(mesh_dec.faces, dtype=np.int32)
-    print(f"  Post-decimation: {len(verts):,} verts / {len(faces):,} faces "
-          f"({time.perf_counter()-t0:.1f} s)")
+    try:
+        import fast_simplification  # noqa: F401 — checked for availability only
+        mesh_full = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+        mesh_dec = mesh_full.simplify_quadric_decimation(face_count=TARGET_FACES)
+        verts = np.array(mesh_dec.vertices, dtype=np.float64)
+        faces = np.array(mesh_dec.faces, dtype=np.int32)
+        print(f"  Post-decimation: {len(verts):,} verts / {len(faces):,} faces "
+              f"({time.perf_counter()-t0:.1f} s)")
+    except ImportError:
+        print(f"  fast_simplification not installed — skipping decimation.")
+        print(f"  Install with: pip install fast-simplification")
+        print(f"  Exporting full {len(faces):,}-face mesh.")
 else:
     print("  No decimation needed.")
 
@@ -212,11 +216,16 @@ print(f"\nSTL written: {out_path}  ({file_kb:.0f} kB, coordinates in mm)")
 # ---------------------------------------------------------------------------
 # Manifold check
 # ---------------------------------------------------------------------------
-watertight = is_watertight(verts, faces)
-print(f"Watertight (manifold): {watertight}")
-if not watertight:
-    print("  NOTE: non-manifold likely at channel edges or decimation seams.")
-    print("  Increase resolution, reduce decimation, or heal in MeshLab.")
+WATERTIGHT_FACE_LIMIT = 5_000_000  # edge-adjacency matrix OOMs above ~5M faces
+if len(faces) > WATERTIGHT_FACE_LIMIT:
+    print(f"Watertight check skipped ({len(faces):,} faces > {WATERTIGHT_FACE_LIMIT//1_000_000}M limit).")
+    print("  Install fast-simplification, decimate, then re-check.")
+else:
+    watertight = is_watertight(verts, faces)
+    print(f"Watertight (manifold): {watertight}")
+    if not watertight:
+        print("  NOTE: non-manifold likely at channel edges or decimation seams.")
+        print("  Increase resolution, reduce decimation, or heal in MeshLab.")
 
 # ---------------------------------------------------------------------------
 # Bounding box of output
