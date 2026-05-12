@@ -202,6 +202,9 @@ class EngineRequirements:
     n_cycles_required : float   Required LCF life [cycles].
     T_wall_max : float          Hard gas-wall temperature limit [K].
     dP_coolant_budget : float   Max total coolant pressure drop [Pa].
+    pump_pressure_margin : float Additional feed-system head above Pc + dP_inj
+                                used to set P_coolant_inlet [Pa].  Default 2 MPa
+                                matches calcs/ convention for the reference engine.
     n_channels : int            Not used by sizer (sizer sweeps internally);
                                 kept as a hint for future fixed-n_ch mode.
     """
@@ -215,6 +218,7 @@ class EngineRequirements:
     n_cycles_required: float = 100.0
     T_wall_max: float = 1000.0
     dP_coolant_budget: float = 3.0e6
+    pump_pressure_margin: float = 2.0e6
     n_channels: int = 76
 
 
@@ -515,13 +519,11 @@ class Engine:
         # ------------------------------------------------------------------
         # 4. Cooling channel sizing
         # ------------------------------------------------------------------
-        # Coolant inlet pressure: Pc + injector ΔP + 2 MPa pump margin.
-        # The 2 MPa margin matches calcs/ convention (P_coolant_inlet = 12.0 MPa
-        # for the reference engine: 6.8948 + 3.1027 + ~2.0 ≈ 12.0 MPa).
-        # Using the full dP_coolant_budget here would over-pressurize the
-        # jacket sizing and artificially inflate the structural stress.
-        _PUMP_MARGIN_PA = 2.0e6  # [Pa] fixed feed-system pump head margin
-        P_coolant_inlet = req.chamber_pressure + dP_inj + _PUMP_MARGIN_PA
+        # Coolant inlet pressure: Pc + injector ΔP + pump head margin.
+        # The margin is req.pump_pressure_margin (default 2 MPa), which
+        # matches calcs/ convention for the reference engine:
+        #   6.8948 + 3.1027 + 2.0 ≈ 12.0 MPa = calcs/ CoolantInlet(P=12.0e6)
+        P_coolant_inlet = req.chamber_pressure + dP_inj + req.pump_pressure_margin
 
         coolant_inlet = CoolantInlet(
             T=prop.T_coolant_inlet,
