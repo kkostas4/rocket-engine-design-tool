@@ -52,6 +52,7 @@ from physics.structural.bilayer import (
 from physics.structural.fatigue import lcf_check
 from physics.structural.liner_stress import liner_stress_profile
 from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
+from noyron.cache import StepCache
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -455,6 +456,7 @@ class Engine:
 
     def __init__(self, requirements: EngineRequirements) -> None:
         self._req = requirements
+        self._cache: StepCache = StepCache()
 
     # ------------------------------------------------------------------
     # Public methods
@@ -464,136 +466,213 @@ class Engine:
         """
         Run the full design pipeline and return a populated EngineDesign.
 
+        Results are memoized per Engine instance via StepCache.  Calling
+        design() a second time with the same requirements returns immediately
+        (all 8 steps served from cache).  If requirements change — which
+        cannot happen on a frozen-dataclass Engine instance, so construct a
+        new Engine — build a fresh Engine instead; the old cache is discarded.
+
+        Cache key strategy: each step's key is a tuple of the *keys* of
+        every upstream step it depends on, plus the EngineRequirements
+        scalars consumed directly.  Intermediate objects (CombustionGas,
+        RaoNozzle, …) are not hashed; their keys serve as proxies.
+        Correctness is enforced by key composition — if any input changes,
+        every downstream key changes automatically.
+
         Steps (each depends on all prior steps):
           1. gas            thermochem CEA lookup + PropellantPair transport props
-          2. nozzle         RaoNozzle contour from throat area
-          3. injector       PintleInjector sizing (pintle OD and n_orifices fixed)
-          4. channel_geom   size_channels() parametric sweep
-          5. bilayer        WallLayer sizes + jacket auto-sizing
+          2. nozzle         RaoNozzle contour + mass flow derivation
+          3. injector       PintleInjector sizing
+          4. coolant_inlet  CoolantInlet from mass flow + pressure budget
+          5. channel_geom   size_channels() parametric sweep
           6. regen_soln     solve_regen() coupled 1-D solver (n=200)
-          7. structural     bilayer_stress_profile() axial stress
-          8. lcf            lcf_check() Manson-Coffin at worst station
+          7. bilayer        WallLayer + jacket auto-sizing
+          8. structural     bilayer_stress_profile() axial stress
+          9. lcf            lcf_check() Manson-Coffin at worst station
         """
         req = self._req
         prop = req.propellant
+        cache = self._cache
 
         # ------------------------------------------------------------------
         # 1. Thermochemistry
+        # Key: propellant + mixture ratio + chamber pressure.
         # ------------------------------------------------------------------
-        gas = _thermochem(prop, req.mixture_ratio, req.chamber_pressure)
-
-        # ------------------------------------------------------------------
-        # 2. Nozzle
-        # ------------------------------------------------------------------
-        m_dot, m_dot_ox, m_dot_fuel = _mass_flows(
-            req.thrust, gas, req.mixture_ratio, req.expansion_ratio, prop
+        gas_key = ("gas", prop, req.mixture_ratio, req.chamber_pressure)
+        gas = cache.get_or_compute(
+            gas_key,
+            lambda: _thermochem(prop, req.mixture_ratio, req.chamber_pressure),
         )
-        At = throat_area(m_dot, req.chamber_pressure, gas.c_star)
-        r_throat = math.sqrt(At / math.pi)
 
-        nozzle = RaoNozzle(
-            r_throat=r_throat,
-            epsilon=req.expansion_ratio,
+        # ------------------------------------------------------------------
+        # 2. Nozzle (+ mass flow derivation, which depends only on gas_key)
+        # Key: gas_key + thrust + expansion_ratio.
+        # ------------------------------------------------------------------
+        nozzle_key = ("nozzle", gas_key, req.thrust, req.expansion_ratio)
+
+        def _compute_nozzle():
+            m_dot, m_dot_ox, m_dot_fuel = _mass_flows(
+                req.thrust, gas, req.mixture_ratio, req.expansion_ratio, prop
+            )
+            At = throat_area(m_dot, req.chamber_pressure, gas.c_star)
+            r_throat = math.sqrt(At / math.pi)
+            return (
+                RaoNozzle(r_throat=r_throat, epsilon=req.expansion_ratio),
+                m_dot, m_dot_ox, m_dot_fuel,
+            )
+
+        nozzle, m_dot, m_dot_ox, m_dot_fuel = cache.get_or_compute(
+            nozzle_key, _compute_nozzle
         )
 
         # ------------------------------------------------------------------
         # 3. Injector
+        # Key: nozzle_key + density pair (from propellant, already in gas_key
+        #      via prop).  dP_inj = 0.45 * Pc is fully determined by nozzle_key.
         # ------------------------------------------------------------------
-        # Injector ΔP from reference design: 45% of Pc (CLAUDE.md: 3.103 MPa / 6.8948 MPa)
+        injector_key = ("injector", nozzle_key)
+
+        def _compute_injector():
+            dP_inj = 0.45 * req.chamber_pressure
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                from physics.injector.pintle import PintleInjector
+                return PintleInjector.from_uniform_dP(
+                    dP_inj=dP_inj,
+                    m_dot_ox=m_dot_ox,
+                    m_dot_fuel=m_dot_fuel,
+                    rho_ox=prop.density_ox,
+                    rho_fuel=prop.density_fuel,
+                    Cd_ox=0.6,
+                    Cd_fuel=0.6,
+                    pintle_OD=0.030,
+                    n_fuel_orifices=20,
+                )
+
+        injector = cache.get_or_compute(injector_key, _compute_injector)
+
+        # ------------------------------------------------------------------
+        # 4. Coolant inlet
+        # Key: nozzle_key + pump budget scalars + coolant identity.
+        # ------------------------------------------------------------------
         dP_inj = 0.45 * req.chamber_pressure
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            from physics.injector.pintle import PintleInjector
-            injector = PintleInjector.from_uniform_dP(
-                dP_inj=dP_inj,
-                m_dot_ox=m_dot_ox,
-                m_dot_fuel=m_dot_fuel,
-                rho_ox=prop.density_ox,
-                rho_fuel=prop.density_fuel,
-                Cd_ox=0.6,
-                Cd_fuel=0.6,
-                pintle_OD=0.030,
-                n_fuel_orifices=20,
-            )
-
-        # ------------------------------------------------------------------
-        # 4. Cooling channel sizing
-        # ------------------------------------------------------------------
-        # Coolant inlet pressure: Pc + injector ΔP + pump head margin.
-        # The margin is req.pump_pressure_margin (default 2 MPa), which
-        # matches calcs/ convention for the reference engine:
-        #   6.8948 + 3.1027 + 2.0 ≈ 12.0 MPa = calcs/ CoolantInlet(P=12.0e6)
         P_coolant_inlet = req.chamber_pressure + dP_inj + req.pump_pressure_margin
-
-        coolant_inlet = CoolantInlet(
-            T=prop.T_coolant_inlet,
-            P=P_coolant_inlet,
-            m_dot=m_dot_fuel,
-            fluid=prop.coolant,
+        coolant_key = (
+            "coolant",
+            nozzle_key,
+            req.pump_pressure_margin,
+            prop.T_coolant_inlet,
+            prop.coolant,
+        )
+        coolant_inlet = cache.get_or_compute(
+            coolant_key,
+            lambda: CoolantInlet(
+                T=prop.T_coolant_inlet,
+                P=P_coolant_inlet,
+                m_dot=m_dot_fuel,
+                fluid=prop.coolant,
+            ),
         )
 
-        sizing_problem = ChannelSizingProblem(
-            nozzle=nozzle,
-            gas=gas,
-            coolant_inlet=coolant_inlet,
-            wall_material=GRCOP42,
-            T_wall_max=req.T_wall_max,
-            T_wall_margin=50.0,
-            dP_max=req.dP_coolant_budget,
-            min_wall_thickness=_T_LINER_M,
-            max_aspect_ratio=8.0,
-            min_channel_width=0.6e-3,
-            t_land_min=0.3e-3,
-            n_stations_opt=60,
+        # ------------------------------------------------------------------
+        # 5. Cooling channel sizing
+        # Key: nozzle_key + gas_key + coolant_key + thermal/pressure limits.
+        # ------------------------------------------------------------------
+        channel_key = (
+            "channel",
+            nozzle_key,
+            gas_key,
+            coolant_key,
+            req.T_wall_max,
+            req.dP_coolant_budget,
         )
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            channel_geometry = size_channels(sizing_problem)
-
-        # ------------------------------------------------------------------
-        # 5. Regen solution (n=200 validation solve)
-        # ------------------------------------------------------------------
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            regen_solution = solve_regen(
+        def _compute_channels():
+            sizing_problem = ChannelSizingProblem(
                 nozzle=nozzle,
                 gas=gas,
-                channel_geom=channel_geometry,
                 coolant_inlet=coolant_inlet,
                 wall_material=GRCOP42,
-                direction="counterflow",
-                n_stations=200,
-                tol=0.5,
+                T_wall_max=req.T_wall_max,
+                T_wall_margin=50.0,
+                dP_max=req.dP_coolant_budget,
+                min_wall_thickness=_T_LINER_M,
+                max_aspect_ratio=8.0,
+                min_channel_width=0.6e-3,
+                t_land_min=0.3e-3,
+                n_stations_opt=60,
             )
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return size_channels(sizing_problem)
+
+        channel_geometry = cache.get_or_compute(channel_key, _compute_channels)
 
         # ------------------------------------------------------------------
-        # 6. Bilayer wall sizing
+        # 6. Regen solution (n=200 validation solve)
+        # Key: all inputs to solve_regen that are not already in channel_key.
         # ------------------------------------------------------------------
-        bilayer = _build_bilayer(nozzle, channel_geometry, regen_solution)
+        regen_key = ("regen", channel_key)
+
+        def _compute_regen():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return solve_regen(
+                    nozzle=nozzle,
+                    gas=gas,
+                    channel_geom=channel_geometry,
+                    coolant_inlet=coolant_inlet,
+                    wall_material=GRCOP42,
+                    direction="counterflow",
+                    n_stations=200,
+                    tol=0.5,
+                )
+
+        regen_solution = cache.get_or_compute(regen_key, _compute_regen)
 
         # ------------------------------------------------------------------
-        # 7. Structural analysis
+        # 7. Bilayer wall sizing
+        # Key: regen_key (includes nozzle + channel geometry transitively).
         # ------------------------------------------------------------------
-        P_gas_arr = _gas_pressure_profile(
-            nozzle, gas, regen_solution["x"]
+        bilayer_key = ("bilayer", regen_key)
+        bilayer = cache.get_or_compute(
+            bilayer_key,
+            lambda: _build_bilayer(nozzle, channel_geometry, regen_solution),
         )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            structural = bilayer_stress_profile(
-                regen_solution=regen_solution,
-                bilayer=bilayer,
-                P_gas_arr=P_gas_arr,
-            )
 
         # ------------------------------------------------------------------
-        # 8. LCF check
+        # 8. Structural analysis
+        # Key: regen_key + bilayer_key (gas is already in regen_key).
         # ------------------------------------------------------------------
-        lcf = lcf_check(
-            regen_solution=regen_solution,
-            structural_solution=structural,
-            n_cycles_required=req.n_cycles_required,
-            material=GRCOP84_PROXY,
+        structural_key = ("structural", regen_key, bilayer_key)
+
+        def _compute_structural():
+            P_gas_arr = _gas_pressure_profile(nozzle, gas, regen_solution["x"])
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return bilayer_stress_profile(
+                    regen_solution=regen_solution,
+                    bilayer=bilayer,
+                    P_gas_arr=P_gas_arr,
+                )
+
+        structural = cache.get_or_compute(structural_key, _compute_structural)
+
+        # ------------------------------------------------------------------
+        # 9. LCF check
+        # Key: structural_key + n_cycles_required.
+        # n_cycles_required is the ONLY EngineRequirements field that does
+        # not affect upstream steps, so changing it re-runs only this step.
+        # ------------------------------------------------------------------
+        lcf_key = ("lcf", structural_key, req.n_cycles_required)
+        lcf = cache.get_or_compute(
+            lcf_key,
+            lambda: lcf_check(
+                regen_solution=regen_solution,
+                structural_solution=structural,
+                n_cycles_required=req.n_cycles_required,
+                material=GRCOP84_PROXY,
+            ),
         )
 
         return EngineDesign(
