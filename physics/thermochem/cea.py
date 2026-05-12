@@ -263,6 +263,56 @@ _ROCKETCEA_FUEL: dict[str, str] = {
 
 
 @lru_cache(maxsize=4096)
+def cea_isp_vac(
+    *,
+    propellant: "PropellantPair",
+    Pc: float,
+    MR: float,
+    eps: float,
+) -> float:
+    """
+    Equilibrium vacuum specific impulse [s] at nozzle exit via rocketcea.
+
+    Uses rocketcea get_IvacCstrTc which applies the full equilibrium-flow
+    expansion, accounting for species recombination in the nozzle.  This is
+    more accurate than c_star × Cf(frozen-gamma) / g0, which overestimates
+    Cf at fuel-rich conditions because frozen chamber gamma is elevated there.
+
+    Source: Gordon & McBride (1994) NASA RP-1311; rocketcea wrapper.
+    Validity: equilibrium expansion; MR range 0.5–10; any Pc and eps.
+
+    Parameters
+    ----------
+    propellant : PropellantPair  Propellant combination.
+    Pc : float                   Chamber pressure [Pa].
+    MR : float                   O/F mass ratio [-].
+    eps : float                  Nozzle expansion ratio Ae/At [-].
+
+    Returns
+    -------
+    float
+        Isp_vac [s] (equilibrium-flow, vacuum back-pressure).
+    """
+    try:
+        from rocketcea.cea_obj import CEA_Obj
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "rocketcea is not installed.  pip install rocketcea"
+        ) from exc
+
+    fuel_cea = _ROCKETCEA_FUEL.get(propellant.fuel)
+    if fuel_cea is None:
+        raise ValueError(
+            f"No rocketcea card name for PropellantPair.fuel='{propellant.fuel}'."
+        )
+
+    Pc_psia = Pc / PSI_TO_PA
+    obj = CEA_Obj(oxName=propellant.oxidizer, fuelName=fuel_cea)
+    isp_vac, _cstar_ft, _tc_r = obj.get_IvacCstrTc(Pc=Pc_psia, MR=MR, eps=eps)
+    return float(isp_vac)
+
+
+@lru_cache(maxsize=4096)
 def cea_combustion(
     *,
     propellant: "PropellantPair",

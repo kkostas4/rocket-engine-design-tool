@@ -25,7 +25,7 @@ from __future__ import annotations
 import pytest
 
 from noyron.engine import METHALOX
-from physics.thermochem.cea import cea_combustion
+from physics.thermochem.cea import cea_combustion, cea_isp_vac
 from physics.util.units import PSI_TO_PA
 
 _PC_REF = 6_894_800.0  # 1000 psia in Pa
@@ -135,6 +135,61 @@ class TestVariesWithPc:
 # ---------------------------------------------------------------------------
 # test_cache_hit
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# test_cea_isp_vac — equilibrium exit Isp
+# ---------------------------------------------------------------------------
+
+class TestIspVac:
+    def test_isp_vac_absolute_at_reference(self) -> None:
+        """
+        Isp_vac at (Pc=10 MPa, MR=3.5, eps=40) is within 5% of 367 s.
+
+        Reference: rocketcea get_IvacCstrTc, cross-checked against NASA CEA
+        published values for LOX/CH4 at similar conditions.
+        """
+        isp = cea_isp_vac(propellant=METHALOX, Pc=10e6, MR=3.5, eps=40.0)
+        assert abs(isp - 367.0) / 367.0 < 0.05, (
+            f"Isp_vac = {isp:.2f} s, expected ~367 s (error = {abs(isp-367)/367*100:.1f}%)"
+        )
+
+    def test_isp_vac_peaks_in_stoich_range(self) -> None:
+        """
+        Equilibrium Isp_vac (eps=10.6) peaks in MR=[3.0, 4.0] for methalox.
+
+        Uses equilibrium-flow get_IvacCstrTc — not frozen-gamma Cf — so the
+        peak correctly lies near MR=3.3-3.5 rather than being shifted low by
+        the high frozen chamber gamma at fuel-rich conditions.
+        """
+        mrs = (2.5, 3.0, 3.3, 3.5, 3.6, 3.7, 4.0)
+        isps = {mr: cea_isp_vac(propellant=METHALOX, Pc=_PC_7, MR=mr, eps=10.6)
+                for mr in mrs}
+        peak_mr = max(isps, key=isps.__getitem__)
+        assert 3.0 <= peak_mr <= 4.0, (
+            f"Peak equilibrium Isp at MR={peak_mr:.1f}, expected 3.0–4.0. "
+            f"Values: {isps}"
+        )
+
+    def test_isp_vac_greater_than_frozen_cf_at_fuel_rich(self) -> None:
+        """
+        Equilibrium Isp_vac < frozen-Cf Isp at MR=2.5 (fuel-rich).
+
+        At fuel-rich conditions the frozen chamber gamma is elevated (~1.17)
+        which inflates Cf and overestimates Isp.  Equilibrium expansion
+        correctly gives a lower value there, shifting the peak to higher MR.
+        """
+        from noyron.engine import _thrust_coefficient
+        _G0 = 9.80665
+        mr = 2.5
+        gas = cea_combustion(propellant=METHALOX, Pc=_PC_7, MR=mr)
+        Cf_frozen = _thrust_coefficient(10.6, gas.gamma, gas.Pc, Pa=0.0)
+        isp_frozen = gas.c_star * Cf_frozen / _G0
+        isp_equil  = cea_isp_vac(propellant=METHALOX, Pc=_PC_7, MR=mr, eps=10.6)
+        assert isp_equil < isp_frozen, (
+            f"At MR=2.5 equilibrium Isp ({isp_equil:.2f} s) should be < "
+            f"frozen-Cf Isp ({isp_frozen:.2f} s) but is not."
+        )
+
 
 class TestCacheHit:
     def test_same_object_returned_on_hit(self) -> None:

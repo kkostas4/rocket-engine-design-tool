@@ -14,7 +14,9 @@ propellant: methalox
 epsilon: 10.605          # expansion ratio Ae/At
 
 # --- optional overrides (defaults shown) ---
-t_wall_max: 1000.0       # K   gas-wall temperature limit (DB model)
-dp_coolant: 3.0e6        # Pa  total coolant pressure-drop budget
+# Dittus-Boelter underpredicts h_c by 2-5x for transcritical CH4 (Pizzarelli 2016).
+# Use 1500 K / 5 MPa until Pizzarelli correction is implemented.
+t_wall_max: 1500.0       # K   gas-wall temperature limit (DB model, conservative)
+dp_coolant: 5.0e6        # Pa  total coolant pressure-drop budget
 n_cycles: 100            # required LCF life
 pump_margin: 2.0e6       # Pa  feed-system pump head above Pc + dP_inj

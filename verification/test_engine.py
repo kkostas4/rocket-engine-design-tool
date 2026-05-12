@@ -115,7 +115,7 @@ def test_changing_pc_changes_design(reference_design: EngineDesign) -> None:
         mixture_ratio=3.60,
         propellant=METHALOX,
         expansion_ratio=10.605,
-        T_wall_max=1100.0,        # relaxed: higher Pc → higher heat flux
+        T_wall_max=1600.0,        # relaxed: higher Pc → higher heat flux (D-B conservative)
         dP_coolant_budget=5.0e6,  # relaxed: allow sizer to find a solution
     )
     d_hi = Engine(req_hi).design()

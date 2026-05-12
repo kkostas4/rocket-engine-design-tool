@@ -153,7 +153,7 @@ def _propellant_name_str(pair: Any) -> str:
 
 def _success_row(point_id: int, req: Any, design: Any, dt: float) -> dict[str, Any]:
     import numpy as np
-    from noyron.engine import _thrust_coefficient
+    from physics.thermochem.cea import cea_isp_vac
 
     rs = design.regen_solution
     struc = design.structural
@@ -163,10 +163,12 @@ def _success_row(point_id: int, req: Any, design: Any, dt: float) -> dict[str, A
     dT_cool = float(abs(T_cool[-1] - T_cool[0]))
 
     try:
-        Cf_vac = _thrust_coefficient(
-            req.expansion_ratio, design.gas.gamma, req.chamber_pressure, Pa=0.0
+        Isp_approx = cea_isp_vac(
+            propellant=req.propellant,
+            Pc=req.chamber_pressure,
+            MR=req.mixture_ratio,
+            eps=req.expansion_ratio,
         )
-        Isp_approx = design.gas.c_star * Cf_vac / _G0
     except Exception:
         Isp_approx = 0.0
 

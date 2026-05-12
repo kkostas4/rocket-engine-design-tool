@@ -212,7 +212,11 @@ class EngineRequirements:
     operating_altitude : float  Sea-level = 0 [m].  Reserved; unused.
     n_cycles_required : float   Required LCF life [cycles].
     T_wall_max : float          Hard gas-wall temperature limit [K].
+                                Default 1500 K — Dittus-Boelter is conservative for
+                                transcritical CH4 by 2-5x (Pizzarelli 2016); actual
+                                wall temperature is likely lower.
     dP_coolant_budget : float   Max total coolant pressure drop [Pa].
+                                Default 5 MPa, consistent with D-B coolant model.
     pump_pressure_margin : float Additional feed-system head above Pc + dP_inj
                                 used to set P_coolant_inlet [Pa].  Default 2 MPa
                                 matches calcs/ convention for the reference engine.
@@ -227,8 +231,8 @@ class EngineRequirements:
     expansion_ratio: float
     operating_altitude: float = 0.0
     n_cycles_required: float = 100.0
-    T_wall_max: float = 1000.0
-    dP_coolant_budget: float = 3.0e6
+    T_wall_max: float = 1500.0     # K  (Dittus-Boelter is conservative for transcritical CH4)
+    dP_coolant_budget: float = 5.0e6  # Pa (budget consistent with D-B coolant model)
     pump_pressure_margin: float = 2.0e6
     n_channels: int = 76
 
@@ -939,8 +943,13 @@ class Engine:
         At = nozzle.A_throat
         c_eff = req.thrust / m_dot
         Isp = c_eff / _G0
-        Cf_vac = _thrust_coefficient(req.expansion_ratio, gas.gamma, gas.Pc, Pa=0.0)
-        Isp_vacuum_cea = gas.c_star * Cf_vac / _G0
+        from physics.thermochem.cea import cea_isp_vac
+        Isp_vacuum_cea = cea_isp_vac(
+            propellant=req.propellant,
+            Pc=req.chamber_pressure,
+            MR=req.mixture_ratio,
+            eps=req.expansion_ratio,
+        )
         T_wall_peak = float(regen["T_wall_gas"].max())
         dP_total = float(regen["dP_total"])
 

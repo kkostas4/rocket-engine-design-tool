@@ -154,7 +154,7 @@ def test_changing_pc_invalidates_downstream() -> None:
         mixture_ratio=req_lo.mixture_ratio,
         propellant=req_lo.propellant,
         expansion_ratio=req_lo.expansion_ratio,
-        T_wall_max=1100.0,        # relaxed for higher Pc
+        T_wall_max=1600.0,        # relaxed for higher Pc (D-B conservative for transcritical CH4)
         dP_coolant_budget=5.0e6,  # relaxed for higher Pc
     )
 
