@@ -26,6 +26,7 @@ from noyron.engine import (
     KEROLOX,
     METHALOX,
 )
+from noyron.sweep import SweepConfig, run_sweep, cartesian_points
 
 __all__ = [
     "Engine",
@@ -35,4 +36,7 @@ __all__ = [
     "METHALOX",
     "KEROLOX",
     "HYDROLOX",
+    "SweepConfig",
+    "run_sweep",
+    "cartesian_points",
 ]

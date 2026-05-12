@@ -136,6 +136,52 @@ def _build_parser() -> argparse.ArgumentParser:
     p3.add_argument("--voxel-size", type=float, default=5e-4, metavar="M",
                     help="Voxel grid spacing [m] (default: 5e-4 = 0.5 mm)")
 
+    # ------------------------------------------------------------------ sweep
+    p4 = sub.add_parser(
+        "sweep",
+        help="Run a Cartesian-product parameter sweep.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Run Engine.design() over all Cartesian combinations of the --vary axes.\n\n"
+            "Base requirements from --config yaml (design or sweep format) or CLI flags.\n"
+            "Each --vary FIELD=v1,v2,... adds one sweep axis.\n\n"
+            "Example (CLI):\n"
+            "  python -m noyron sweep \\\n"
+            "      --config calcs/design_examples/methalox_5kN.yaml \\\n"
+            "      --vary pc=5e6,7e6,9e6 --vary mr=3.3,3.6 \\\n"
+            "      --parallel 4 --output output/pc_mr_sweep/\n\n"
+            "Example (sweep YAML):\n"
+            "  python -m noyron sweep \\\n"
+            "      --config calcs/sweeps/pc_mr_methalox.yaml\n"
+        ),
+    )
+    p4.add_argument("--config", type=Path, default=None, metavar="YAML",
+                    help="Design or sweep YAML.  A sweep YAML has 'base' and "
+                         "'variations' keys; a design YAML is used as the base.")
+    p4.add_argument("--vary", action="append", default=None, metavar="FIELD=v1,v2,...",
+                    help="Sweep axis: FIELD=v1,v2,...  Repeatable.  "
+                         "FIELD is a short name (pc, mr, epsilon, t_wall_max, ...).")
+    p4.add_argument("--parallel", type=int, default=1, metavar="N",
+                    help="Number of worker processes (default: 1).")
+    p4.add_argument("--render", action="store_true",
+                    help="Render chamber_nozzle STL for each feasible point.")
+    p4.add_argument("--output", type=Path, default=None, metavar="DIR",
+                    help="Output directory (default: output/sweep_<timestamp>/).")
+    # Base design parameters (optional; loaded from --config if present)
+    p4.add_argument("--thrust", type=float, default=None, metavar="N")
+    p4.add_argument("--pc", type=float, default=None, metavar="Pa")
+    p4.add_argument("--mr", type=float, default=None, metavar="[-]")
+    p4.add_argument("--propellant", type=str, default=None, metavar="NAME",
+                    choices=_VALID_PROPELLANTS)
+    p4.add_argument("--epsilon", type=float, default=None, metavar="[-]")
+    p4.add_argument("--t-wall-max", type=float, default=None, metavar="K")
+    p4.add_argument("--dp-coolant", type=float, default=None, metavar="Pa")
+    p4.add_argument("--n-cycles", type=float, default=None, metavar="N")
+    p4.add_argument("--pump-margin", type=float, default=None, metavar="Pa")
+    p4.add_argument("--n-channels", type=int, default=None, metavar="N")
+    p4.add_argument("--verbose", action="store_true",
+                    help="Show full Python tracebacks on errors.")
+
     return parser
 
 
@@ -398,6 +444,126 @@ def cmd_summary(args: argparse.Namespace) -> None:
     print(Engine(design.requirements).summary(design))
 
 
+def cmd_sweep(args: argparse.Namespace) -> None:
+    from noyron.sweep import SweepConfig, run_sweep
+
+    verbose = args.verbose
+
+    # ── Resolve base requirements ──────────────────────────────────────────
+    cfg_file_variations: dict[str, list] = {}
+    cfg_file_parallel: int = 1
+    cfg_file_render: bool = False
+    base_cfg: dict[str, Any] = {}
+
+    if args.config is not None:
+        if not args.config.exists():
+            _die(f"Config file not found: {args.config}", verbose)
+        raw = _load_yaml(args.config)
+        if "base" in raw:
+            # Full sweep YAML: extract base section + variations
+            base_cfg = raw["base"]
+            cfg_file_variations = raw.get("variations", {})
+            cfg_file_parallel = int(raw.get("parallel", 1))
+            cfg_file_render = bool(raw.get("render", False))
+        else:
+            # Plain design YAML
+            base_cfg = raw
+
+    # CLI flags override base_cfg values
+    cli_overrides: dict[str, Any] = {
+        "thrust":      args.thrust,
+        "pc":          args.pc,
+        "mr":          args.mr,
+        "propellant":  args.propellant,
+        "epsilon":     args.epsilon,
+        "t_wall_max":  args.t_wall_max,
+        "dp_coolant":  args.dp_coolant,
+        "n_cycles":    args.n_cycles,
+        "n_channels":  args.n_channels,
+        "pump_margin": args.pump_margin,
+    }
+    for k, v in cli_overrides.items():
+        if v is not None:
+            base_cfg[k] = v
+
+    # Validate required fields for the base
+    required = ("thrust", "pc", "mr", "propellant", "epsilon")
+    missing = [k for k in required if base_cfg.get(k) is None]
+    if missing:
+        _die(
+            f"Missing required base parameters: {', '.join('--' + k for k in missing)}\n"
+            f"Provide them via --config or as CLI flags.",
+            verbose,
+        )
+
+    from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+
+    prop_name = str(base_cfg["propellant"]).lower()
+    if prop_name not in _PROPELLANT_PRESETS:
+        _die(
+            f"Unknown propellant '{prop_name}'. "
+            f"Valid: {', '.join(sorted(_PROPELLANT_PRESETS))}",
+            verbose,
+        )
+
+    base_req = EngineRequirements(
+        thrust=float(base_cfg["thrust"]),
+        chamber_pressure=float(base_cfg["pc"]),
+        mixture_ratio=float(base_cfg["mr"]),
+        propellant=_PROPELLANT_PRESETS[prop_name],
+        expansion_ratio=float(base_cfg["epsilon"]),
+        n_cycles_required=float(base_cfg.get("n_cycles", 100.0)),
+        T_wall_max=float(base_cfg.get("t_wall_max", 1000.0)),
+        dP_coolant_budget=float(base_cfg.get("dp_coolant", 3.0e6)),
+        pump_pressure_margin=float(base_cfg.get("pump_margin", 2.0e6)),
+        n_channels=int(base_cfg.get("n_channels", 76)),
+    )
+
+    # ── Resolve sweep variations ────────────────────────────────────────────
+    variations: dict[str, list] = dict(cfg_file_variations)
+    for vary_arg in (args.vary or []):
+        field, _, vals_str = vary_arg.partition("=")
+        field = field.strip()
+        raw_vals = [v.strip() for v in vals_str.split(",")]
+        parsed_vals: list[Any] = []
+        for v in raw_vals:
+            try:
+                parsed_vals.append(float(v))
+            except ValueError:
+                parsed_vals.append(v)  # propellant name or other string
+        variations[field] = parsed_vals
+
+    if not variations:
+        _die(
+            "No sweep axes defined. Use --vary FIELD=v1,v2,... or provide "
+            "a sweep YAML with a 'variations' section.",
+            verbose,
+        )
+
+    parallel = max(1, args.parallel or cfg_file_parallel)
+    render = args.render or cfg_file_render
+    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    out_dir = args.output or (Path("output") / f"sweep_{ts}")
+
+    n_points = 1
+    for vals in variations.values():
+        n_points *= len(vals)
+    print(
+        f"Starting sweep: {n_points} point(s) across "
+        f"{len(variations)} axis/axes, {parallel} worker(s)"
+    )
+    print(f"Output: {out_dir}")
+
+    cfg = SweepConfig(
+        base=base_req,
+        variations=variations,
+        output_dir=out_dir,
+        parallel=parallel,
+        render=render,
+    )
+    run_sweep(cfg)
+
+
 def cmd_render(args: argparse.Namespace) -> None:
     from noyron.engine import Engine, EngineDesign
     from physics.util.exceptions import SizingInfeasibleError
@@ -447,6 +613,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_summary(args)
     elif args.command == "render":
         cmd_render(args)
+    elif args.command == "sweep":
+        cmd_sweep(args)
     else:
         parser.print_help()
         sys.exit(1)
