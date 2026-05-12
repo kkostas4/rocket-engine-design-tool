@@ -22,11 +22,12 @@ METHALOX, KEROLOX, HYDROLOX
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -181,6 +182,15 @@ HYDROLOX = PropellantPair(
     Pr=0.55,
 )
 
+# Name → PropellantPair lookup used by the CLI and serialization.
+_PROPELLANT_PRESETS: dict[str, PropellantPair] = {
+    "methalox": METHALOX,
+    "kerolox": KEROLOX,
+    "hydrolox": HYDROLOX,
+}
+# Reverse lookup (by object identity — valid because all three are module-level singletons).
+_PROPELLANT_NAMES: dict[int, str] = {id(v): k for k, v in _PROPELLANT_PRESETS.items()}
+
 
 # ---------------------------------------------------------------------------
 # EngineRequirements
@@ -246,6 +256,173 @@ class EngineDesign:
     regen_solution: dict
     structural: dict
     lcf: dict
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize to a JSON-serializable dict.
+
+        Channel geometry and bilayer are stored as parametric scalars
+        (zone heights, thicknesses) rather than as callables, which are
+        not serializable.  from_dict() reconstructs the callable objects
+        from these stored parameters.
+
+        Returns
+        -------
+        dict
+            Fully JSON-serializable.  Round-trip via from_dict().
+        """
+
+        def _py(v: Any) -> Any:
+            """Convert numpy scalar / array to a plain Python type."""
+            if hasattr(v, "tolist"):
+                return v.tolist()
+            return v
+
+        req = self.requirements
+        prop_name = _PROPELLANT_NAMES.get(id(req.propellant), "custom")
+        geom = self.channel_geometry
+        nozzle = self.nozzle
+
+        return {
+            "requirements": {
+                "thrust": req.thrust,
+                "chamber_pressure": req.chamber_pressure,
+                "mixture_ratio": req.mixture_ratio,
+                "propellant": prop_name,
+                "expansion_ratio": req.expansion_ratio,
+                "operating_altitude": req.operating_altitude,
+                "n_cycles_required": req.n_cycles_required,
+                "T_wall_max": req.T_wall_max,
+                "dP_coolant_budget": req.dP_coolant_budget,
+                "pump_pressure_margin": req.pump_pressure_margin,
+                "n_channels": req.n_channels,
+            },
+            "gas": {f.name: getattr(self.gas, f.name) for f in dataclasses.fields(self.gas)},
+            "nozzle": {f.name: getattr(nozzle, f.name) for f in dataclasses.fields(nozzle)},
+            "injector": {
+                f.name: getattr(self.injector, f.name)
+                for f in dataclasses.fields(self.injector)
+            },
+            "channel_geometry": {
+                "n_channels": geom.n_channels,
+                "w": geom.width(0.0),
+                "h01": geom.height(0.0),
+                "h2": geom.height(nozzle.x_exit),
+                "t_wall": geom.wall_thickness(0.0),
+                "t_land": geom.land_thickness(0.0),
+                "x2": 2.0 * nozzle.r_throat,
+            },
+            "bilayer": {
+                "t_jacket": self.bilayer.outer_jacket.thickness(0.0),
+            },
+            "regen_solution": {k: _py(v) for k, v in self.regen_solution.items()},
+            "structural": {k: _py(v) for k, v in self.structural.items()},
+            "lcf": {k: _py(v) for k, v in self.lcf.items()},
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "EngineDesign":
+        """
+        Reconstruct an EngineDesign from to_dict() output.
+
+        Callable fields in CoolingChannelGeometry and BilayerWall are
+        rebuilt from the stored zone parameters.  The result is
+        functionally equivalent to the original design — all physics
+        arrays are identical and all callable fields return the same
+        values — but object identity is not preserved.
+
+        Parameters
+        ----------
+        d : dict
+            Output of to_dict().
+
+        Returns
+        -------
+        EngineDesign
+        """
+        from physics.injector.pintle import PintleInjector
+
+        # Requirements
+        r = d["requirements"]
+        prop_name = r["propellant"]
+        if prop_name not in _PROPELLANT_PRESETS:
+            raise ValueError(
+                f"Unknown propellant '{prop_name}'. "
+                f"Valid names: {sorted(_PROPELLANT_PRESETS)}"
+            )
+        req = EngineRequirements(
+            thrust=r["thrust"],
+            chamber_pressure=r["chamber_pressure"],
+            mixture_ratio=r["mixture_ratio"],
+            propellant=_PROPELLANT_PRESETS[prop_name],
+            expansion_ratio=r["expansion_ratio"],
+            operating_altitude=r.get("operating_altitude", 0.0),
+            n_cycles_required=r.get("n_cycles_required", 100.0),
+            T_wall_max=r.get("T_wall_max", 1000.0),
+            dP_coolant_budget=r.get("dP_coolant_budget", 3.0e6),
+            pump_pressure_margin=r.get("pump_pressure_margin", 2.0e6),
+            n_channels=r.get("n_channels", 76),
+        )
+
+        gas = CombustionGas(**d["gas"])
+        nozzle = RaoNozzle(**d["nozzle"])
+        injector = PintleInjector(**d["injector"])
+
+        # Channel geometry — rebuild piecewise-constant callables
+        cg = d["channel_geometry"]
+        _w, _h01, _h2, _x2 = cg["w"], cg["h01"], cg["h2"], cg["x2"]
+        _t_wall, _t_land = cg["t_wall"], cg["t_land"]
+        channel_geometry = CoolingChannelGeometry(
+            n_channels=cg["n_channels"],
+            width=lambda x, __w=_w: __w,
+            height=lambda x, __h01=_h01, __h2=_h2, __x2=_x2: __h01 if x <= __x2 else __h2,
+            wall_thickness=lambda x, __t=_t_wall: __t,
+            land_thickness=lambda x, __t=_t_land: __t,
+        )
+
+        # Bilayer — constant jacket thickness stored in dict
+        _t_jacket = d["bilayer"]["t_jacket"]
+        bilayer = BilayerWall(
+            inner_liner=WallLayer(
+                thickness=channel_geometry.wall_thickness,
+                material=GRCOP84_PROXY,
+            ),
+            outer_jacket=WallLayer(
+                thickness=lambda x, __t=_t_jacket: __t,
+                material=INCONEL718_STRUCT,
+            ),
+            ribs=RibGeometry(
+                n_ribs=channel_geometry.n_channels,
+                land_width=channel_geometry.land_thickness,
+                height=channel_geometry.height,
+                material=GRCOP84_PROXY,
+            ),
+            channel_geometry=channel_geometry,
+        )
+
+        # Arrays: lists → numpy arrays; scalars stay as-is
+        def _arr(v: Any) -> Any:
+            return np.array(v) if isinstance(v, list) else v
+
+        regen = {k: _arr(v) for k, v in d["regen_solution"].items()}
+        struct = {k: _arr(v) for k, v in d["structural"].items()}
+        lcf = dict(d["lcf"])
+
+        return cls(
+            requirements=req,
+            gas=gas,
+            nozzle=nozzle,
+            injector=injector,
+            channel_geometry=channel_geometry,
+            bilayer=bilayer,
+            regen_solution=regen,
+            structural=struct,
+            lcf=lcf,
+        )
 
 
 # ---------------------------------------------------------------------------

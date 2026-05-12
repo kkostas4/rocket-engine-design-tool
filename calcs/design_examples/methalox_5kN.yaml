@@ -1,0 +1,20 @@
+# methalox_5kN.yaml
+# -----------------
+# 5 kN class methane/LOX engine at 69 bar chamber pressure.
+# Near-reference conditions (same Pc and O/F as the 4.4 kN baseline).
+# Default coolant budget (3 MPa dP, 2 MPa pump margin) is adequate.
+#
+# Run with:
+#   python -m noyron design --config calcs/design_examples/methalox_5kN.yaml
+
+thrust: 5000.0           # N
+pc: 6894800.0            # Pa  (= 1000 psia / 69 bar)
+mr: 3.60                 # O/F mass ratio
+propellant: methalox
+epsilon: 10.605          # expansion ratio Ae/At
+
+# --- optional overrides (defaults shown) ---
+t_wall_max: 1000.0       # K   gas-wall temperature limit (DB model)
+dp_coolant: 3.0e6        # Pa  total coolant pressure-drop budget
+n_cycles: 100            # required LCF life
+pump_margin: 2.0e6       # Pa  feed-system pump head above Pc + dP_inj
