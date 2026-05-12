@@ -73,6 +73,7 @@ from physics.nozzle.rao import RaoNozzle
 from physics.regen.bartz import CombustionGas
 from physics.regen.coolant import CoolingChannelGeometry, CoolantInlet, WallMaterial
 from physics.regen.solver import solve_regen
+from physics.util.exceptions import SizingInfeasibleError
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +81,15 @@ from physics.regen.solver import solve_regen
 # ---------------------------------------------------------------------------
 
 
-class ChannelSizingError(RuntimeError):
+class ChannelSizingError(SizingInfeasibleError):
     """
     Raised when no channel geometry satisfies all constraints.
 
     The error message reports which constraint was binding for each
     candidate n_channels so the engineer knows what to change.
+
+    Inherits from SizingInfeasibleError (which inherits RuntimeError)
+    so callers can catch either the specific or base class.
     """
 
 

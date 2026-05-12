@@ -50,6 +50,7 @@ from physics.regen.bartz import CombustionGas
 from physics.regen.coolant import GRCOP42, CoolantInlet
 from physics.regen.sizing import ChannelSizingError, ChannelSizingProblem, size_channels
 from physics.regen.solver import solve_regen
+from physics.util.exceptions import SizingInfeasibleError
 
 # ---------------------------------------------------------------------------
 # Reference engine fixtures
@@ -283,6 +284,74 @@ class TestSizingConsistentWithSolver:
             f"Closure test: solve_regen(n=300) gives T_wall_peak = {T_peak:.1f} K, "
             f"exceeds operating limit {T_WALL_MAX:.0f} K + 20 K tolerance"
         )
+
+
+# ---------------------------------------------------------------------------
+# 6. Infeasible sizing raises typed exception
+# ---------------------------------------------------------------------------
+class TestSizingInfeasibleRaisesTypedError:
+    def test_pc_too_high_fails_gracefully(self) -> None:
+        """Pc * 1.5 with unchanged constraints raises SizingInfeasibleError.
+
+        At 1.5× the reference Pc, heat flux at the throat increases ~2×
+        (Bartz scales as Pc^0.8).  The minimum achievable T_wall_peak with
+        Dittus-Boelter + GRCop-42 at w_min = 0.6 mm far exceeds the 950 K
+        target, and the pressure budget is insufficient for the required
+        channel velocity — the sizer cannot find a feasible geometry.
+
+        The exception must be a SizingInfeasibleError (or a subclass) so that
+        callers can catch by type.  A bare RuntimeError or an assertion error
+        would force callers to inspect the message string, which is fragile.
+
+        Source: NASA SP-8087 (1977) §3.3 — identifying non-feasible cooling
+        loads before committing to hardware; clear error propagation is
+        required so the engineer knows which constraint to relax.
+        """
+        high_pc = GAS.Pc * 1.5
+        high_pc_gas = CombustionGas(
+            Tc=GAS.Tc,
+            Pc=high_pc,
+            gamma=GAS.gamma,
+            MW=GAS.MW,
+            cp=GAS.cp,
+            mu=GAS.mu,
+            Pr=GAS.Pr,
+            c_star=GAS.c_star,
+        )
+        # Throat radius scales as sqrt(At) ∝ 1/sqrt(Pc) for fixed m_dot
+        r_throat_hi = NOZZLE.r_throat * (GAS.Pc / high_pc) ** 0.5
+        nozzle_hi = RaoNozzle(r_throat=r_throat_hi, epsilon=NOZZLE.epsilon)
+
+        problem_hi = ChannelSizingProblem(
+            nozzle=nozzle_hi,
+            gas=high_pc_gas,
+            coolant_inlet=COOLANT,          # same budget — deliberately too tight
+            wall_material=GRCOP42,
+            T_wall_max=T_WALL_MAX,
+            T_wall_margin=T_WALL_MARGIN,
+            dP_max=DP_MAX,
+            min_wall_thickness=0.5e-3,
+            max_aspect_ratio=8.0,
+            min_channel_width=0.6e-3,
+            t_land_min=0.3e-3,
+            n_stations_opt=60,
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(SizingInfeasibleError):
+                size_channels(problem_hi)
+
+        # ChannelSizingError is the concrete subclass; verify isinstance
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                size_channels(problem_hi)
+        except SizingInfeasibleError as exc:
+            assert isinstance(exc, ChannelSizingError), (
+                "Expected ChannelSizingError (subclass of SizingInfeasibleError), "
+                f"got {type(exc).__name__}"
+            )
 
 
 # ---------------------------------------------------------------------------
