@@ -86,9 +86,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--epsilon", type=float, metavar="[-]",
                    help="Expansion ratio Ae/At (required unless in --config)")
     p.add_argument("--t-wall-max", type=float, default=None, metavar="K",
-                   help="Max gas-wall temperature [K] (default: 1000)")
+                   help="Max gas-wall temperature [K] (default: 1500)")
     p.add_argument("--dp-coolant", type=float, default=None, metavar="Pa",
-                   help="Coolant pressure-drop budget [Pa] (default: 3e6)")
+                   help="Coolant pressure-drop budget [Pa] (default: 5e6)")
     p.add_argument("--n-cycles", type=float, default=None, metavar="N",
                    help="Required LCF life [cycles] (default: 100)")
     p.add_argument("--n-channels", type=int, default=None, metavar="N",
@@ -223,8 +223,8 @@ _CONFIG_FIELDS: dict[str, tuple[str, Any]] = {
     "mr":             ("mixture_ratio",       None),
     "propellant":     ("propellant",          None),
     "epsilon":        ("expansion_ratio",     None),
-    "t_wall_max":     ("T_wall_max",          1000.0),
-    "dp_coolant":     ("dP_coolant_budget",   3.0e6),
+    "t_wall_max":     ("T_wall_max",          1500.0),
+    "dp_coolant":     ("dP_coolant_budget",   5.0e6),
     "n_cycles":       ("n_cycles_required",   100.0),
     "n_channels":     ("n_channels",          76),
     "pump_margin":    ("pump_pressure_margin", 2.0e6),
@@ -300,8 +300,8 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
         propellant=propellant,
         expansion_ratio=float(cfg["epsilon"]),
         n_cycles_required=float(cfg.get("n_cycles", 100.0)),
-        T_wall_max=float(cfg.get("t_wall_max", 1000.0)),
-        dP_coolant_budget=float(cfg.get("dp_coolant", 3.0e6)),
+        T_wall_max=float(cfg.get("t_wall_max", 1500.0)),
+        dP_coolant_budget=float(cfg.get("dp_coolant", 5.0e6)),
         pump_pressure_margin=float(cfg.get("pump_margin", 2.0e6)),
         n_channels=int(cfg.get("n_channels", 76)),
     )
@@ -513,8 +513,8 @@ def cmd_sweep(args: argparse.Namespace) -> None:
         propellant=_PROPELLANT_PRESETS[prop_name],
         expansion_ratio=float(base_cfg["epsilon"]),
         n_cycles_required=float(base_cfg.get("n_cycles", 100.0)),
-        T_wall_max=float(base_cfg.get("t_wall_max", 1000.0)),
-        dP_coolant_budget=float(base_cfg.get("dp_coolant", 3.0e6)),
+        T_wall_max=float(base_cfg.get("t_wall_max", 1500.0)),
+        dP_coolant_budget=float(base_cfg.get("dp_coolant", 5.0e6)),
         pump_pressure_margin=float(base_cfg.get("pump_margin", 2.0e6)),
         n_channels=int(base_cfg.get("n_channels", 76)),
     )
