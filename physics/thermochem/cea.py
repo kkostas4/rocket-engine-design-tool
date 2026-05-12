@@ -46,12 +46,17 @@ rocketcea Python wrapper (version unknown at CSV generation time):
 from __future__ import annotations
 
 import csv
+from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
 from physics.util.units import PSI_TO_PA, FT_TO_M
+
+if TYPE_CHECKING:
+    from noyron.engine import PropellantPair
 
 # ---------------------------------------------------------------------------
 # Reference conditions for the pre-computed sweep
@@ -237,3 +242,127 @@ class CEA:
     def mw(self, Pc_pa: float, MR: float) -> float:
         """Not implemented — molecular weight not stored in the reference CSV."""
         raise NotImplementedError("mw not in reference CSV; needs rocketcea backend.")
+
+
+# ---------------------------------------------------------------------------
+# Live rocketcea backend
+# ---------------------------------------------------------------------------
+
+_R_UNIV: float = 8314.46  # universal gas constant [J/(kmol·K)]
+
+# Maps PropellantPair.fuel string → rocketcea fuelName.
+# rocketcea uses the CEA propellant card names; LCH4 is not a valid card.
+_ROCKETCEA_FUEL: dict[str, str] = {
+    "LCH4": "CH4",
+    "CH4":  "CH4",
+    "RP-1": "RP-1",
+    "RP1":  "RP-1",
+    "LH2":  "LH2",
+    "H2":   "LH2",
+}
+
+
+@lru_cache(maxsize=4096)
+def cea_combustion(
+    *,
+    propellant: "PropellantPair",
+    Pc: float,
+    MR: float,
+    expansion_ratio: float = 1.0,
+    frozen: bool = False,
+) -> "CombustionGas":
+    """
+    Live CEA equilibrium combustion state via rocketcea.
+
+    Returns a CombustionGas with Tc, c*, gamma, MW, cp, mu, Pr all
+    evaluated at the given (Pc, MR), not taken from a static preset.
+    Results are LRU-cached (maxsize=4096); repeated calls with the same
+    arguments are essentially free after the first call.
+
+    Gas-phase transport properties:
+      - gamma  : frozen-composition ratio of specific heats at chamber exit
+                 (get_Chamber_MolWt_gamma).
+      - cp     : derived from frozen gamma — cp = gamma·R/(gamma-1)/MW
+                 (Anderson 2003 "Modern Compressible Flow" Eq. 1.12).
+                 Internally consistent with gamma for nozzle calculations.
+      - mu     : dynamic viscosity from get_Chamber_Transport [millipoise → Pa·s].
+      - Pr     : Prandtl number from get_Chamber_Transport (dimensionless).
+
+    Source: Gordon, S. and McBride, B.J. (1994). "Computer Program for
+            Calculation of Complex Chemical Equilibrium Compositions and
+            Applications." NASA RP-1311.
+    Wrapper: rocketcea (https://rocketcea.readthedocs.io/).
+    Validity: equilibrium chamber composition; frozen-flow nozzle assumption
+              for gamma and cp; MR range 0.5–10 for most propellant pairs.
+
+    Parameters
+    ----------
+    propellant : PropellantPair
+        Propellant combination.  propellant.oxidizer and propellant.fuel
+        must map to valid rocketcea card names (see _ROCKETCEA_FUEL).
+    Pc : float
+        Chamber pressure [Pa].
+    MR : float
+        Oxidiser-to-fuel mass ratio (O/F) [-].
+    expansion_ratio : float
+        Nozzle expansion ratio Ae/At [-].  Reserved for future exit-plane
+        properties; chamber properties are independent of this value.
+    frozen : bool
+        If True, request frozen-flow transport from rocketcea.
+
+    Returns
+    -------
+    CombustionGas
+        Populated CombustionGas dataclass (all values in SI).
+
+    Raises
+    ------
+    ModuleNotFoundError
+        If rocketcea is not installed.
+    ValueError
+        If propellant.fuel is not in _ROCKETCEA_FUEL.
+    """
+    try:
+        from rocketcea.cea_obj import CEA_Obj
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "rocketcea is not installed.  Install it with:\n"
+            "    pip install rocketcea\n"
+            "rocketcea is required for live CEA thermochemistry."
+        ) from exc
+
+    from physics.regen.bartz import CombustionGas
+
+    fuel_cea = _ROCKETCEA_FUEL.get(propellant.fuel)
+    if fuel_cea is None:
+        raise ValueError(
+            f"No rocketcea card name for PropellantPair.fuel='{propellant.fuel}'. "
+            f"Known mappings: {sorted(_ROCKETCEA_FUEL)}.  "
+            f"Add an entry to _ROCKETCEA_FUEL in physics/thermochem/cea.py."
+        )
+
+    Pc_psia = Pc / PSI_TO_PA
+    obj = CEA_Obj(oxName=propellant.oxidizer, fuelName=fuel_cea)
+
+    # Chamber temperature [°R → K]
+    Tc = float(obj.get_Temperatures(Pc=Pc_psia, MR=MR)[0]) / 1.8
+
+    # Characteristic velocity [ft/s → m/s]
+    c_star = float(obj.get_Cstar(Pc=Pc_psia, MR=MR)) * FT_TO_M
+
+    # Frozen-composition molecular weight [g/mol = kg/kmol] and gamma [-]
+    MW_raw, gamma_raw = obj.get_Chamber_MolWt_gamma(Pc=Pc_psia, MR=MR)
+    MW = float(MW_raw)
+    gamma = float(gamma_raw)
+
+    # Frozen Cp from ideal gas (self-consistent with gamma)
+    cp = gamma * _R_UNIV / (gamma - 1.0) / MW
+
+    # Transport: (Cp_eng, mu_mP, lambda_eng, Pr)
+    transport = obj.get_Chamber_Transport(Pc=Pc_psia, MR=MR, frozen=int(frozen))
+    mu = float(transport[1]) * 1.0e-4   # millipoise → Pa·s
+    Pr = float(transport[3])            # dimensionless
+
+    return CombustionGas(
+        Tc=Tc, Pc=Pc, gamma=gamma, MW=MW, cp=cp, mu=mu, Pr=Pr, c_star=c_star,
+    )

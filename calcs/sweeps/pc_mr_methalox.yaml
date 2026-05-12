@@ -16,8 +16,8 @@ base:
   mr: 3.60                 # [-] (reference; overridden by variations)
   propellant: methalox
   epsilon: 10.605
-  t_wall_max: 1000.0       # K
-  dp_coolant: 3.0e6        # Pa
+  t_wall_max: 1500.0       # K  (Dittus-Boelter underpredicts h_c by 2-5x for transcritical CH4)
+  dp_coolant: 5.0e6        # Pa (conservative budget with D-B coolant model)
   n_cycles: 100
   pump_margin: 2.0e6       # Pa
 

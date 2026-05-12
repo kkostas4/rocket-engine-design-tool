@@ -432,40 +432,16 @@ class EngineDesign:
 
 def _thermochem(propellant: PropellantPair, MR: float, Pc: float) -> CombustionGas:
     """
-    Build a CombustionGas from CEA + PropellantPair transport properties.
+    Live CEA combustion state via rocketcea.
 
-    c* source priority:
-      1. propellant.c_star_ref  (verified from reference geometry, overrides CEA)
-      2. CEA CSV at Pc (only valid at Pc = 1000 psia = 6.8948 MPa)
-      3. CEA CSV at reference Pc (fallback for non-reference Pc; < 2% error)
+    Returns Tc, c*, gamma, MW, cp, mu, Pr all evaluated at the given
+    (Pc, MR) — no static preset values.  Results are LRU-cached inside
+    cea_combustion, so repeated calls with the same arguments are fast.
 
-    Tc always comes from the CEA CSV (Tc is not geometry-dependent).
-
-    Source: Gordon & McBride (1994) NASA RP-1311 (via cea_sweep_pc1000.csv).
+    Source: Gordon & McBride (1994) NASA RP-1311; rocketcea wrapper.
     """
-    cea = CEA()
-    try:
-        Tc = cea.tc(Pc, MR)
-        c_star_cea = cea.cstar(Pc, MR)
-    except NotImplementedError:
-        # Fall back to reference Pc (c* is ~0.5% sensitive to Pc for methalox)
-        Tc = cea.tc(_REF_PC_PA, MR)
-        c_star_cea = cea.cstar(_REF_PC_PA, MR)
-
-    # Use the verified reference c* when provided; CEA CSV has a ~3.9% offset
-    # at the reference operating point (see PropellantPair.c_star_ref docstring).
-    c_star = propellant.c_star_ref if propellant.c_star_ref is not None else c_star_cea
-
-    return CombustionGas(
-        Tc=Tc,
-        Pc=Pc,
-        gamma=propellant.gamma,
-        MW=propellant.MW,
-        cp=propellant.cp,
-        mu=propellant.mu,
-        Pr=propellant.Pr,
-        c_star=c_star,
-    )
+    from physics.thermochem.cea import cea_combustion
+    return cea_combustion(propellant=propellant, Pc=Pc, MR=MR)
 
 
 def _thrust_coefficient(
@@ -963,6 +939,8 @@ class Engine:
         At = nozzle.A_throat
         c_eff = req.thrust / m_dot
         Isp = c_eff / _G0
+        Cf_vac = _thrust_coefficient(req.expansion_ratio, gas.gamma, gas.Pc, Pa=0.0)
+        Isp_vacuum_cea = gas.c_star * Cf_vac / _G0
         T_wall_peak = float(regen["T_wall_gas"].max())
         dP_total = float(regen["dP_total"])
 
@@ -990,9 +968,10 @@ class Engine:
             f"  m_dot total          : {m_dot:.4f} kg/s",
             f"  m_dot ox             : {m_dot_ox:.4f} kg/s",
             f"  m_dot fuel           : {m_dot_fuel:.4f} kg/s",
-            f"  c*                   : {gas.c_star:.1f} m/s",
-            f"  c_eff                : {c_eff:.1f} m/s",
-            f"  Isp (est.)           : {Isp:.2f} s",
+            f"  c*  (CEA theor.)     : {gas.c_star:.1f} m/s",
+            f"  c_eff (delivered)    : {c_eff:.1f} m/s",
+            f"  Isp (delivered SL)   : {Isp:.2f} s",
+            f"  Isp_vac (CEA theor.) : {Isp_vacuum_cea:.2f} s",
             "",
             "  Nozzle",
             f"    R_throat           : {nozzle.r_throat*1e3:.3f} mm",
