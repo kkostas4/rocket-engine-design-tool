@@ -13,9 +13,10 @@ Usage
 
 Subcommands
 -----------
-  design   Build a new engine design from flags or a YAML config file.
-  summary  Print the summary for a previously saved design.
-  render   Re-render STL files for a previously saved design.
+  design    Build a new engine design from flags or a YAML config file.
+  summary   Print the summary for a previously saved design.
+  render    Re-render STL files for a previously saved design.
+  optimize  Constrained design optimization (DE or Nelder-Mead).
 
 Run `python -m noyron <subcommand> --help` for per-subcommand usage.
 """
@@ -180,6 +181,34 @@ def _build_parser() -> argparse.ArgumentParser:
     p4.add_argument("--pump-margin", type=float, default=None, metavar="Pa")
     p4.add_argument("--n-channels", type=int, default=None, metavar="N")
     p4.add_argument("--verbose", action="store_true",
+                    help="Show full Python tracebacks on errors.")
+
+    # --------------------------------------------------------------- optimize
+    p5 = sub.add_parser(
+        "optimize",
+        help="Constrained design optimization (DE or Nelder-Mead).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Optimize engine design parameters subject to thermal, coolant,\n"
+            "structural, and LCF constraints.\n\n"
+            "Example:\n"
+            "  python -m noyron optimize \\\n"
+            "      --config calcs/opt_examples/methalox_max_isp.yaml\n"
+        ),
+    )
+    p5.add_argument("--config", type=Path, required=True, metavar="YAML",
+                    help="Optimization YAML config (required).")
+    p5.add_argument("--output", type=Path, default=None, metavar="DIR",
+                    help="Output directory override.")
+    p5.add_argument("--parallel", type=int, default=None, metavar="N",
+                    help="Worker processes override.")
+    p5.add_argument("--max-evals", type=int, default=None, metavar="N",
+                    dest="max_evals",
+                    help="Max objective evaluations override.")
+    p5.add_argument("--method", type=str, default=None,
+                    choices=["de", "nelder-mead"],
+                    help="Optimizer: 'de' (default) or 'nelder-mead'.")
+    p5.add_argument("--verbose", action="store_true",
                     help="Show full Python tracebacks on errors.")
 
     return parser
@@ -564,6 +593,134 @@ def cmd_sweep(args: argparse.Namespace) -> None:
     run_sweep(cfg)
 
 
+def cmd_optimize(args: argparse.Namespace) -> None:
+    from noyron.optimize import OptimizationConfig, run_optimization
+
+    verbose = args.verbose
+
+    if not args.config.exists():
+        _die(f"Config file not found: {args.config}", verbose)
+
+    raw = _load_yaml(args.config)
+
+    # ── Base requirements ──────────────────────────────────────────────────
+    base_cfg = raw.get("base", {})
+    if not base_cfg:
+        _die("Config must have a 'base:' section.", verbose)
+
+    required = ("thrust", "pc", "mr", "propellant", "epsilon")
+    missing = [k for k in required if base_cfg.get(k) is None]
+    if missing:
+        _die(
+            f"Missing required base parameters: {', '.join(missing)}\n"
+            "Provide them in the 'base:' section of the config YAML.",
+            verbose,
+        )
+
+    from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+
+    prop_name = str(base_cfg["propellant"]).lower()
+    if prop_name not in _PROPELLANT_PRESETS:
+        _die(
+            f"Unknown propellant '{prop_name}'. "
+            f"Valid: {', '.join(sorted(_PROPELLANT_PRESETS))}",
+            verbose,
+        )
+
+    base_req = EngineRequirements(
+        thrust=float(base_cfg["thrust"]),
+        chamber_pressure=float(base_cfg["pc"]),
+        mixture_ratio=float(base_cfg["mr"]),
+        propellant=_PROPELLANT_PRESETS[prop_name],
+        expansion_ratio=float(base_cfg["epsilon"]),
+        n_cycles_required=float(base_cfg.get("n_cycles", 100.0)),
+        T_wall_max=float(base_cfg.get("t_wall_max", 1500.0)),
+        dP_coolant_budget=float(base_cfg.get("dp_coolant", 5.0e6)),
+        pump_pressure_margin=float(base_cfg.get("pump_margin", 2.0e6)),
+        n_channels=int(base_cfg.get("n_channels", 76)),
+    )
+
+    # ── Free variables ─────────────────────────────────────────────────────
+    free_vars_raw = raw.get("free_vars", {})
+    if not free_vars_raw:
+        _die("Config must have a non-empty 'free_vars:' section.", verbose)
+
+    free_vars: dict[str, tuple[float, float]] = {}
+    for k, v in free_vars_raw.items():
+        if not (isinstance(v, (list, tuple)) and len(v) == 2):
+            _die(
+                f"free_vars['{k}'] must be [lower, upper], got: {v}",
+                verbose,
+            )
+        free_vars[k] = (float(v[0]), float(v[1]))
+
+    # ── Objective ──────────────────────────────────────────────────────────
+    obj_raw = raw.get("objective", {})
+    obj_metric = str(obj_raw.get("metric", "Isp_approx"))
+    obj_direction = str(obj_raw.get("direction", "max"))
+    if obj_direction not in ("max", "min"):
+        _die(f"objective.direction must be 'max' or 'min', got '{obj_direction}'.", verbose)
+
+    # ── Constraints ────────────────────────────────────────────────────────
+    constraints: list[tuple[str, str, float]] = []
+    for item in raw.get("constraints", []):
+        if not (isinstance(item, (list, tuple)) and len(item) == 3):
+            _die(
+                f"Bad constraint format: {item!r}. "
+                "Expected [metric_name, op, value].",
+                verbose,
+            )
+        constraints.append((str(item[0]), str(item[1]), float(item[2])))
+
+    # ── Overrides from CLI ─────────────────────────────────────────────────
+    max_evals = args.max_evals or int(raw.get("max_evals", 300))
+    parallel = args.parallel or int(raw.get("parallel", 1))
+    method = args.method or str(raw.get("method", "de"))
+    popsize = int(raw.get("popsize", 15))
+
+    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    default_out = Path("output") / f"opt_{ts}"
+    out_dir = args.output or Path(str(raw.get("output_dir", default_out)))
+
+    cfg = OptimizationConfig(
+        base=base_req,
+        free_vars=free_vars,
+        objective=(obj_metric, obj_direction),
+        constraints=constraints,
+        max_evals=max_evals,
+        parallel=parallel,
+        method=method,
+        popsize=popsize,
+        output_dir=out_dir,
+    )
+
+    print(
+        f"Optimising: {len(free_vars)} free variable(s), "
+        f"method={method}, max_evals={max_evals}"
+    )
+    print(f"Objective : {obj_direction}({obj_metric})")
+    for k, (lo, hi) in free_vars.items():
+        print(f"  {k}: [{lo:.4g}, {hi:.4g}]")
+    print(f"Output    : {out_dir}")
+
+    try:
+        result = run_optimization(cfg)
+    except Exception as exc:
+        _die(f"Optimisation failed: {exc}", verbose, exc)
+
+    print("\nOptimisation complete.")
+    print(f"  Feasible          : {result['feasible']}")
+    print(f"  Best {obj_metric:<20}: {result['best_obj']:.4f}")
+    for k, v in zip(free_vars.keys(), result["best_x"]):
+        print(f"  {k:<26}: {v:.6g}")
+    print(f"  Evaluations       : {result['n_evals']}")
+    print(f"  Wall time         : {result['wall_time_s']:.1f} s")
+    print(f"  Output dir        : {result['output_dir']}")
+    if result["feasible"]:
+        print(f"\nRoundtrip check:")
+        print(f"  python -m noyron design --config {result['output_dir']}/best_design.yaml")
+
+
 def cmd_render(args: argparse.Namespace) -> None:
     from noyron.engine import Engine, EngineDesign
     from physics.util.exceptions import SizingInfeasibleError
@@ -615,6 +772,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_render(args)
     elif args.command == "sweep":
         cmd_sweep(args)
+    elif args.command == "optimize":
+        cmd_optimize(args)
     else:
         parser.print_help()
         sys.exit(1)

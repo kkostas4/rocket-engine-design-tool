@@ -1,0 +1,39 @@
+# Maximise equilibrium vacuum Isp for the reference methalox engine.
+#
+# Free variables: chamber pressure, O/F, expansion ratio.
+# Constraints: peak gas-wall temperature, coolant pressure drop,
+#              LCF life margin, structural yield margins.
+#
+# Run with:
+#   python -m noyron optimize --config calcs/opt_examples/methalox_max_isp.yaml
+
+base:
+  thrust: 4448.22         # N  (1000 lbf reference engine)
+  pc: 6.8948e6            # Pa starting point (1000 psia)
+  mr: 3.6                 # O/F starting point
+  propellant: methalox
+  epsilon: 10.605         # expansion ratio starting point
+  t_wall_max: 1500.0      # K  (D-B model is conservative; Pizzarelli actual ~300-600 K lower)
+  dp_coolant: 5.0e6       # Pa
+  n_cycles: 100.0
+  pump_margin: 2.0e6
+
+free_vars:
+  pc:      [5.0e6, 10.0e6]   # Pa  (725 – 1450 psia)
+  mr:      [2.8, 4.2]        # O/F
+  epsilon: [8.0, 20.0]       # Ae/At
+
+objective:
+  metric: Isp_approx
+  direction: max
+
+constraints:
+  - [peak_T_wall_gas, "<=", 1500.0]
+  - [coolant_dP, "<=", 5.0e6]
+  - [lcf_margin, ">=", 0.0]
+  - [worst_margin_yield, ">=", 0.0]
+
+max_evals: 300
+parallel: 1
+method: de
+output_dir: output/opt_max_isp
