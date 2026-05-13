@@ -859,7 +859,11 @@ class Engine:
         design : EngineDesign
         voxel_size : float          Voxel grid spacing [m].  Default 0.1 mm.
         output_dir : Path           Output directory.
-        components : tuple[str]     Subset of ('chamber_nozzle', 'channels').
+        components : tuple[str]     Subset of:
+                                      'chamber_nozzle' — outer jacket only
+                                      'channels'       — jacket with cooling channel voids
+                                      'injector'       — face plate + pintle post only
+                                      'assembly'       — channels + injector combined
 
         Returns
         -------
@@ -868,10 +872,11 @@ class Engine:
         Raises
         ------
         NotImplementedError
-            For components other than 'chamber_nozzle' and 'channels'.
+            For unknown component names.
         """
         from geometry.components.chamber_nozzle import chamber_nozzle_sdf
         from geometry.components.cooling_channels import chamber_with_channels_sdf
+        from geometry.components.injector import engine_assembly_sdf, injector_sdf
         from geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
         from geometry.mesh.extractor import adaptive_bbox
         from geometry.mesh.stl_export import write_stl
@@ -891,10 +896,29 @@ class Engine:
                     rao_nozzle=design.nozzle,
                     bilayer=design.bilayer,
                 )
+            elif comp == "injector":
+                sdf_fn, inj_info = injector_sdf(
+                    pintle=design.injector,
+                    nozzle=design.nozzle,
+                    bilayer=design.bilayer,
+                )
+                r_outer = inj_info["r_ch_inner"]
+                profile = {
+                    "z_min": inj_info["z_face"],
+                    "z_max": inj_info["z_pintle_tip"],
+                    "r_outer_max": r_outer,
+                }
+            elif comp == "assembly":
+                sdf_fn, profile = engine_assembly_sdf(
+                    nozzle=design.nozzle,
+                    bilayer=design.bilayer,
+                    channel_geometry=design.channel_geometry,
+                    pintle=design.injector,
+                )
             else:
                 raise NotImplementedError(
                     f"render component '{comp}' not implemented. "
-                    "Supported: 'chamber_nozzle', 'channels'."
+                    "Supported: 'chamber_nozzle', 'channels', 'injector', 'assembly'."
                 )
 
             bbox = adaptive_bbox(
