@@ -464,7 +464,11 @@ def run_optimization(config: OptimizationConfig) -> dict[str, Any]:
 
     t0 = time.perf_counter()
 
-    if config.method.lower() == "de":
+    _method = config.method.lower().replace("_", "-")
+    if _method in ("de", "differential-evolution"):
+        _method = "de"
+
+    if _method == "de":
         n_free = max(1, len(free_var_names))
         maxiter = max(1, config.max_evals // (config.popsize * n_free))
         de_iter = [0]
@@ -493,7 +497,7 @@ def run_optimization(config: OptimizationConfig) -> dict[str, Any]:
         if not use_store:
             n_evals_tracker[0] = result.nfev
 
-    elif config.method.lower() == "nelder-mead":
+    elif _method == "nelder-mead":
         x0 = np.array([(lo + hi) / 2.0 for lo, hi in bounds])
         nm_iter = [0]
 
@@ -514,7 +518,8 @@ def run_optimization(config: OptimizationConfig) -> dict[str, Any]:
 
     else:
         raise ValueError(
-            f"Unknown method '{config.method}'. Valid: 'de', 'nelder-mead'."
+            f"Unknown method '{config.method}'. "
+            "Valid: 'de' / 'differential-evolution', 'nelder-mead'."
         )
 
     wall_time = time.perf_counter() - t0
@@ -560,7 +565,7 @@ def run_optimization(config: OptimizationConfig) -> dict[str, Any]:
     _write_outputs(config, free_var_names, best_x, best_metrics, design_best, req_best, feasible)
 
     return {
-        "best_x": best_x,
+        "best_x": dict(zip(free_var_names, best_x)),
         "best_metrics": best_metrics,
         "best_obj": best_metrics.get(obj_metric, float("nan")),
         "n_evals": n_evals_tracker[0],

@@ -14,7 +14,6 @@ For rapid CI, run without the slow marker:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -182,6 +181,38 @@ def test_best_design_yaml_roundtrip(
 # ---------------------------------------------------------------------------
 # Test 5: Nelder-Mead completes without error
 # ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+def test_optimizer_finds_isp_peak_with_real_params(tmp_path: Path) -> None:
+    """Verify the optimizer can actually find MR=3.3 (the known Isp
+    peak for methalox at Pc=7 MPa, eps=10.6 from CEA). Uses
+    production-grade DE parameters; takes 5-15 min on a laptop."""
+    base = EngineRequirements(
+        thrust=5e3,
+        chamber_pressure=7e6,
+        mixture_ratio=3.5,
+        propellant=METHALOX,
+        expansion_ratio=10.6,
+    )
+    config = OptimizationConfig(
+        base=base,
+        free_vars={"mixture_ratio": (2.8, 4.0)},
+        objective=("Isp_vac", "max"),
+        constraints=[],
+        method="differential-evolution",
+        max_evals=80,
+        parallel=4,
+        output_dir=tmp_path / "opt",
+    )
+    result = run_optimization(config)
+
+    assert result["feasible"], "Unconstrained run should always be feasible"
+    best_mr = result["best_x"]["mixture_ratio"]
+    assert abs(best_mr - 3.3) < 0.15, (
+        f"Expected peak O/F near 3.3 (methalox, CEA equilibrium), "
+        f"got {best_mr:.3f}"
+    )
+
 
 @pytest.mark.slow
 def test_nelder_mead_runs(base_req: EngineRequirements, tmp_path: Path) -> None:

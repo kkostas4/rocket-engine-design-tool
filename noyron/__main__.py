@@ -711,7 +711,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
     print("\nOptimisation complete.")
     print(f"  Feasible          : {result['feasible']}")
     print(f"  Best {obj_metric:<20}: {result['best_obj']:.4f}")
-    for k, v in zip(free_vars.keys(), result["best_x"]):
+    for k, v in result["best_x"].items():
         print(f"  {k:<26}: {v:.6g}")
     print(f"  Evaluations       : {result['n_evals']}")
     print(f"  Wall time         : {result['wall_time_s']:.1f} s")
