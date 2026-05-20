@@ -42,7 +42,7 @@ from physics.regen.coolant import (
     WallMaterial,
 )
 from physics.regen.sizing import ChannelSizingProblem, size_channels
-from physics.regen.solver import solve_regen
+from physics.heat_exchanger.rocket_regen import solve_rocket_regen as _solve_regen
 from physics.structural.bilayer import (
     BilayerWall,
     RibGeometry,
@@ -774,7 +774,7 @@ class Engine:
         def _compute_regen():
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return solve_regen(
+                return _solve_regen(
                     nozzle=nozzle,
                     gas=gas,
                     channel_geom=channel_geometry,
