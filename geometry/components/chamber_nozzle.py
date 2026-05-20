@@ -63,14 +63,10 @@ if TYPE_CHECKING:
     from physics.structural.bilayer import BilayerWall
 
 
-# Reference engine chamber length from CLAUDE.md
-_L_CHAMBER_DEFAULT = 0.125  # m  (L_chamber, convergent start to injector face)
-
-
 def chamber_nozzle_sdf(
     rao_nozzle: "RaoNozzle",
     bilayer: "BilayerWall",
-    L_chamber: float = _L_CHAMBER_DEFAULT,
+    L_chamber: float | None = None,
     n_profile_points: int = 500,
 ):
     """
@@ -90,9 +86,10 @@ def chamber_nozzle_sdf(
         Nozzle contour and geometry.
     bilayer : BilayerWall
         Wall layer descriptions (t_liner, h_channel, t_jacket functions of x).
-    L_chamber : float
-        Cylindrical chamber length upstream of the convergent section [m].
-        Default 0.125 m (reference engine per CLAUDE.md).
+    L_chamber : float or None
+        Override for the cylindrical chamber length upstream of the convergent
+        section [m].  If None (default), ``rao_nozzle.L_chamber`` is used.
+        Pass an explicit value only for trade studies or legacy test fixtures.
     n_profile_points : int
         Number of axial samples for the outer profile interpolant.
 
@@ -114,7 +111,10 @@ def chamber_nozzle_sdf(
     # ------------------------------------------------------------------
     z_conv_start = float(rao_nozzle.x_inlet)   # convergent section starts here
     z_exit = float(rao_nozzle.x_exit)
-    z_chamber_start = z_conv_start - L_chamber
+    if L_chamber is None:
+        z_chamber_start = float(rao_nozzle.x_chamber_start)
+    else:
+        z_chamber_start = z_conv_start - L_chamber
 
     # Dense axial stations across nozzle domain (convergent + divergent)
     z_nozzle = np.linspace(z_conv_start, z_exit, n_profile_points)
@@ -132,8 +132,8 @@ def chamber_nozzle_sdf(
         for k in range(n_profile_points)
     ])
 
-    # Chamber section: constant r_outer evaluated at z_conv_start
-    r_ch_inner = float(rao_nozzle.r(z_conv_start))
+    # Chamber section: constant r_outer using r_chamber (correct cylindrical radius)
+    r_ch_inner = float(rao_nozzle.r_chamber)
     r_ch_outer = (
         r_ch_inner
         + bilayer.inner_liner.thickness(z_conv_start)

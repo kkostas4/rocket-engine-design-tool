@@ -232,11 +232,11 @@ class TestRaoNozzle:
         assert dev < 0.001
 
     def test_contour_shape(self, nozzle: RaoNozzle) -> None:
-        """contour(n) returns two arrays of length n."""
+        """contour(n) returns two arrays of length n, spanning x_chamber_start to x_exit."""
         x, r = nozzle.contour(150)
         assert len(x) == 150
         assert len(r) == 150
-        assert x[0] == pytest.approx(nozzle.x_inlet)
+        assert x[0] == pytest.approx(nozzle.x_chamber_start)
         assert x[-1] == pytest.approx(nozzle.x_exit)
 
     def test_invalid_r_throat_raises(self) -> None:
@@ -250,3 +250,71 @@ class TestRaoNozzle:
     def test_out_of_range_epsilon_warns(self) -> None:
         with pytest.warns(RuntimeWarning, match="validity range"):
             RaoNozzle(r_throat=0.01, epsilon=60.0)
+
+
+# ---------------------------------------------------------------------------
+# Chamber geometry (L*-derived barrel section)
+# ---------------------------------------------------------------------------
+class TestChamberGeometry:
+    """
+    Tests for the L*-derived cylindrical chamber section on RaoNozzle.
+
+    Reference: Sutton & Biblarz (2017) Ch. 8, Table 8-1.
+    CLAUDE.md frozen baseline: Ac/At = 4.0, D_chamber = 44.625 mm,
+    L_chamber = 125 mm.
+    """
+
+    @pytest.fixture(scope="class")
+    def nozzle(self) -> RaoNozzle:
+        return RaoNozzle(r_throat=DT_REF / 2.0, epsilon=EPS_REF)
+
+    def test_r_chamber_matches_contraction_ratio(self, nozzle: RaoNozzle) -> None:
+        """r_chamber = r_throat * sqrt(Ac_At) → D_chamber = 44.625 mm (CLAUDE.md)."""
+        r_ch_ref = (DT_REF / 2.0) * math.sqrt(4.0)  # r_throat * 2
+        dev = abs(nozzle.r_chamber - r_ch_ref) / r_ch_ref
+        assert dev < 1e-9, (
+            f"r_chamber = {nozzle.r_chamber*1e3:.6f} mm, "
+            f"expected {r_ch_ref*1e3:.6f} mm"
+        )
+
+    def test_L_star_volume_identity(self, nozzle: RaoNozzle) -> None:
+        """L* identity: L_chamber*A_chamber + V_convergent == L_star*A_throat within 2 %."""
+        V_reconstructed = nozzle.L_chamber * nozzle.A_chamber + nozzle.V_convergent
+        V_ref = nozzle.L_star * nozzle.A_throat
+        dev = abs(V_reconstructed - V_ref) / V_ref
+        assert dev < 0.02, (
+            f"L* volume identity error {100*dev:.4f} %: "
+            f"got {V_reconstructed*1e6:.4f} cm³, "
+            f"expected {V_ref*1e6:.4f} cm³"
+        )
+
+    def test_V_chamber_equals_L_star_times_A_throat(self, nozzle: RaoNozzle) -> None:
+        """V_chamber property returns L_star * A_throat."""
+        assert nozzle.V_chamber == pytest.approx(nozzle.L_star * nozzle.A_throat)
+
+    def test_chamber_radius_constant_in_barrel(self, nozzle: RaoNozzle) -> None:
+        """r(x) == r_chamber for all x in the cylindrical section."""
+        x_vals = np.linspace(nozzle.x_chamber_start, nozzle.x_inlet - 1e-6, 5)
+        for x in x_vals:
+            r = nozzle.r(float(x))
+            assert abs(r - nozzle.r_chamber) / nozzle.r_chamber < 1e-9, (
+                f"r({x:.6f}) = {r:.9f}, expected r_chamber = {nozzle.r_chamber:.9f}"
+            )
+
+    def test_x_chamber_start_upstream_of_convergent(self, nozzle: RaoNozzle) -> None:
+        """x_chamber_start < x_inlet < 0 < x_exit."""
+        assert nozzle.x_chamber_start < nozzle.x_inlet < 0.0 < nozzle.x_exit
+
+    def test_V_chamber_positive(self, nozzle: RaoNozzle) -> None:
+        """Total combustion chamber volume is positive."""
+        assert nozzle.V_chamber > 0.0
+
+    def test_L_star_zero_raises(self) -> None:
+        """L_star <= 0 raises ValueError."""
+        with pytest.raises(ValueError, match="L_star"):
+            RaoNozzle(r_throat=DT_REF / 2.0, epsilon=EPS_REF, L_star=0.0)
+
+    def test_Ac_At_below_one_raises(self) -> None:
+        """Ac_At < 1 raises ValueError."""
+        with pytest.raises(ValueError, match="Ac_At"):
+            RaoNozzle(r_throat=DT_REF / 2.0, epsilon=EPS_REF, Ac_At=0.5)

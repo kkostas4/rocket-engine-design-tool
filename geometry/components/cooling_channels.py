@@ -238,7 +238,7 @@ def chamber_with_channels_sdf(
     *,
     rao_nozzle: "RaoNozzle",
     bilayer: "BilayerWall",
-    L_chamber: float = 0.125,
+    L_chamber: float | None = None,
     n_profile_points: int = 500,
 ) -> tuple[Callable, dict]:
     """
@@ -255,8 +255,9 @@ def chamber_with_channels_sdf(
     ----------
     rao_nozzle : RaoNozzle
     bilayer : BilayerWall
-    L_chamber : float
-        Cylindrical chamber length upstream of the convergent [m].
+    L_chamber : float or None
+        Override for cylindrical chamber length upstream of the convergent [m].
+        If None (default), ``rao_nozzle.L_chamber`` is used.
     n_profile_points : int
         Axial sample count for profile interpolants.
 

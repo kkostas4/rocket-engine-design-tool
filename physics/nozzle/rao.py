@@ -6,13 +6,17 @@ Rao parabolic bell nozzle contour and throat sizing for the reference engine.
 
 Public API
 ----------
+Module-level:
+    - ``DEFAULT_L_STAR`` : dict[str, float] — recommended L* by propellant class.
+
 Functions (backward-compatible):
     - ``throat_area``   : isentropic throat sizing from c*.
     - ``rao_contour``   : Rao parabolic bell nozzle (x, r) arrays in metres.
 
 Dataclass:
     - ``RaoNozzle``     : interpolated r(x), A(x), area_ratio(x) accessors
-                          built on top of rao_contour.
+                          including the L*-derived cylindrical chamber section
+                          upstream of the Rao convergent arc.
 
 Sources
 -------
@@ -30,6 +34,11 @@ Rao contour
     Sutton, G.P. and Biblarz, O. (2017). "Rocket Propulsion Elements,"
     9th ed., Wiley. Section 3.3, Table 3-2 (bell nozzle geometry).
 
+Characteristic length
+    Sutton, G.P. and Biblarz, O. (2017). "Rocket Propulsion Elements,"
+    9th ed., Wiley. Chapter 8, Table 8-1 (L* design guidance per propellant).
+    L* = V_chamber / A_throat, where V_chamber = V_cylinder + V_convergent_arc.
+
 Validity
 --------
     Rao parabolic approximation is valid for expansion ratios 5 <= eps <= 50
@@ -43,10 +52,22 @@ from __future__ import annotations
 
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
+
+
+# ---------------------------------------------------------------------------
+# Default characteristic lengths by propellant class
+# Source: Sutton & Biblarz (2017) Table 8-1.
+# ---------------------------------------------------------------------------
+
+DEFAULT_L_STAR: dict[str, float] = {
+    "methalox": 1.1,   # m  LCH4 / LOX — similar to propane/oxygen range
+    "kerolox":  1.1,   # m  RP-1 / LOX
+    "hydrolox": 0.7,   # m  LH2 / LOX (shorter due to very high flame speed)
+}
 
 
 # ---------------------------------------------------------------------------
@@ -226,25 +247,32 @@ def rao_contour(
 @dataclass
 class RaoNozzle:
     """
-    Rao parabolic bell nozzle with interpolated r(x) and A(x) accessors.
+    Rao parabolic bell nozzle with L*-derived cylindrical chamber section.
 
-    Wraps ``rao_contour`` and builds a scipy linear interpolant over 500
-    internal points so that r(x) and A(x) can be evaluated at any axial
-    station without recomputing the full contour each time.
+    Geometry (upstream to downstream):
+      1. Cylindrical chamber : x_chamber_start ≤ x < x_inlet
+                               constant radius r_chamber = r_throat * sqrt(Ac_At)
+      2. Convergent arc      : x_inlet ≤ x ≤ 0 (throat)
+                               30-degree circular arc, R = 1.5*R_t
+      3. Downstream arc      : 0 ≤ x ≤ x_N
+                               circular arc R = 0.382*R_t
+      4. Divergent bell      : x_N ≤ x ≤ x_exit
+                               parabolic contour
 
-    The coordinate origin is at the throat: x = 0, r = r_throat.
-    The convergent section lies at x < 0; the divergent bell at x > 0.
+    The cylindrical chamber length L_chamber is derived from the
+    characteristic length L* (Sutton & Biblarz Ch. 8):
 
-    Source: Rao, G.V.R. (1958). "Exhaust Nozzle Contour for Optimum Thrust."
-            Jet Propulsion, Vol. 28, No. 6, pp. 377-382.
-            Sutton, G.P. and Biblarz, O. (2017). "Rocket Propulsion Elements,"
-            9th ed., Wiley. Section 3.3, Table 3-2.
-    Validity: 5 <= epsilon <= 50, gamma approx 1.1-1.4.
+        V_chamber = L* × A_throat
+        V_chamber = π·r_chamber² · L_chamber + V_convergent
+        L_chamber = (L* · A_throat − V_convergent) / (π · r_chamber²)
 
-    Default angles theta_n = 25 deg, theta_e = 8 deg are from
-    Sutton & Biblarz Table 3-2 and are appropriate for eps ~ 10-20 with an
-    approximately 85% bell length.  For other expansion ratios consult
-    Rao (1958) Table 1 and pass the appropriate angles explicitly.
+    where V_convergent is the volume of the convergent arc numerically
+    integrated from x_inlet to the throat.
+
+    Source: Sutton, G.P. and Biblarz, O. (2017). "Rocket Propulsion Elements,"
+            9th ed., Wiley. Ch. 8, Table 8-1 — L* design guidance per propellant.
+            Huzel & Huang (1992) §4.2 — Ac/At and L* sizing.
+    Validity: same as rao_contour (eps 5–50, gamma 1.1–1.4).
 
     Parameters
     ----------
@@ -252,10 +280,17 @@ class RaoNozzle:
         Throat radius [m].
     epsilon : float
         Nozzle expansion ratio Ae/At (>= 1).
+    L_star : float
+        Characteristic length [m].  Default 1.1 m — typical methalox / kerolox
+        design value per Sutton & Biblarz Table 8-1.  Use DEFAULT_L_STAR to
+        look up per propellant class.
+    Ac_At : float
+        Chamber-to-throat area ratio [-].  Default 4.0 per CLAUDE.md
+        reference engine (Ac/At = 4.0).
     length_fraction : float
         Nominal bell length as a fraction of the 15 deg equivalent cone
-        length (stored for documentation; the actual length is determined
-        by theta_n and theta_e).  Default 0.80.
+        length (stored for documentation; actual length is determined by
+        theta_n and theta_e).  Default 0.80.
     theta_n : float
         Bell entrance half-angle [deg].  Default 25 deg.
     theta_e : float
@@ -264,6 +299,8 @@ class RaoNozzle:
 
     r_throat: float
     epsilon: float
+    L_star: float = 1.1
+    Ac_At: float = 4.0
     length_fraction: float = 0.80
     theta_n: float = 25.0
     theta_e: float = 8.0
@@ -279,6 +316,10 @@ class RaoNozzle:
                 RuntimeWarning,
                 stacklevel=2,
             )
+        if self.L_star <= 0.0:
+            raise ValueError(f"L_star must be positive, got {self.L_star}")
+        if self.Ac_At < 1.0:
+            raise ValueError(f"Ac_At must be >= 1, got {self.Ac_At}")
 
         # Build dense arrays and interpolant (500 points gives sub-micron
         # interpolation error for typical rocket nozzle dimensions).
@@ -297,6 +338,41 @@ class RaoNozzle:
             assume_sorted=True,
         )
 
+        # ------------------------------------------------------------------
+        # Chamber section derived from L*
+        # Source: Sutton & Biblarz (2017) Ch. 8, L* definition.
+        # ------------------------------------------------------------------
+        self._r_chamber: float = self.r_throat * math.sqrt(self.Ac_At)
+        self._A_chamber: float = math.pi * self._r_chamber ** 2
+
+        # V_convergent = π ∫[x_inlet to 0] r(x)² dx
+        # Integrate using the pre-built contour arrays (convergent section only).
+        _conv_mask = self._x_arr <= 0.0
+        _x_conv = self._x_arr[_conv_mask]
+        _r_conv = self._r_arr[_conv_mask]
+        # Ensure we include x=0 (throat) if the mask omits it.
+        if len(_x_conv) == 0 or _x_conv[-1] < 0.0:
+            _x_conv = np.append(_x_conv, 0.0)
+            _r_conv = np.append(_r_conv, self.r_throat)
+        self._V_convergent: float = float(
+            math.pi * float(np.trapezoid(_r_conv ** 2, _x_conv))
+        )
+
+        # L_chamber from L* definition
+        self._L_chamber: float = (
+            self.L_star * self.A_throat - self._V_convergent
+        ) / self._A_chamber
+
+        if self._L_chamber <= 0.0:
+            raise ValueError(
+                f"L_star={self.L_star:.3f} m is too small for "
+                f"Ac_At={self.Ac_At:.2f}: "
+                f"computed L_chamber={self._L_chamber:.6f} m <= 0. "
+                f"Increase L_star or decrease Ac_At."
+            )
+
+        self._x_chamber_start: float = float(self._x_arr[0]) - self._L_chamber
+
     # ------------------------------------------------------------------
     # Geometry accessors
     # ------------------------------------------------------------------
@@ -313,30 +389,116 @@ class RaoNozzle:
 
     @property
     def x_inlet(self) -> float:
-        """Axial coordinate of the convergent section inlet [m].  x < 0."""
+        """Axial coordinate of the convergent-arc inlet [m].  x < 0.
+
+        This is the junction between the cylindrical chamber and the
+        convergent arc — NOT the upstream face of the chamber.
+        Use ``x_chamber_start`` for the upstream face.
+        """
         return float(self._x_arr[0])
+
+    @property
+    def x_chamber_start(self) -> float:
+        """Axial coordinate of the upstream face of the cylindrical chamber [m].
+
+        x_chamber_start = x_inlet − L_chamber < x_inlet < 0.
+        """
+        return self._x_chamber_start
 
     @property
     def A_throat(self) -> float:
         """Throat cross-sectional area [m2]."""
         return math.pi * self.r_throat**2
 
+    @property
+    def r_chamber(self) -> float:
+        """Cylindrical chamber inner wall radius [m].
+
+        r_chamber = r_throat × sqrt(Ac_At).
+        """
+        return self._r_chamber
+
+    @property
+    def A_chamber(self) -> float:
+        """Cylindrical chamber cross-sectional area [m²]."""
+        return self._A_chamber
+
+    @property
+    def L_chamber(self) -> float:
+        """Cylindrical chamber axial length [m].
+
+        Derived from L*: L_chamber = (L* · At − V_convergent) / A_chamber.
+        """
+        return self._L_chamber
+
+    @property
+    def V_convergent(self) -> float:
+        """Volume of the convergent section (x_inlet to throat) [m³]."""
+        return self._V_convergent
+
+    @property
+    def V_chamber(self) -> float:
+        """Total combustion chamber volume (cylindrical + convergent) [m³].
+
+        V_chamber = L* × A_throat, by definition of L*.
+        """
+        return self.L_star * self.A_throat
+
     def r(self, x: float) -> float:
-        """Wall radius at axial station x [m]."""
+        """Wall radius at axial station x [m].
+
+        Returns r_chamber for x in [x_chamber_start, x_inlet),
+        the interpolated Rao contour value for x in [x_inlet, x_exit].
+        Raises ValueError outside [x_chamber_start, x_exit].
+        """
+        x = float(x)
+        if x < self._x_chamber_start:
+            raise ValueError(
+                f"x={x:.6f} m is upstream of x_chamber_start="
+                f"{self._x_chamber_start:.6f} m"
+            )
+        if x < float(self._x_arr[0]):
+            return self._r_chamber
         return float(self._r_interp(x))
 
     def A(self, x: float) -> float:
         """Cross-sectional area at axial station x [m2]."""
+        x = float(x)
+        if x < self._x_chamber_start:
+            raise ValueError(
+                f"x={x:.6f} m is upstream of x_chamber_start="
+                f"{self._x_chamber_start:.6f} m"
+            )
+        if x < float(self._x_arr[0]):
+            return self._A_chamber
         return math.pi * self.r(x) ** 2
 
     def area_ratio(self, x: float) -> float:
         """Local area ratio A(x) / A_throat [-]."""
+        x = float(x)
+        if x < self._x_chamber_start:
+            raise ValueError(
+                f"x={x:.6f} m is upstream of x_chamber_start="
+                f"{self._x_chamber_start:.6f} m"
+            )
+        if x < float(self._x_arr[0]):
+            return self._A_chamber / self.A_throat
         return self.A(x) / self.A_throat
 
     def contour(self, n: int = 200) -> tuple[np.ndarray, np.ndarray]:
-        """Return evenly-spaced (x, r) arrays with n points from inlet to exit."""
-        x_out = np.linspace(self.x_inlet, self.x_exit, n)
-        r_out = self._r_interp(x_out)
+        """Return evenly-spaced (x, r) arrays with n points from x_chamber_start to exit."""
+        x_out = np.linspace(self._x_chamber_start, self.x_exit, n)
+        x_inlet = float(self._x_arr[0])
+        # Vectorised: r_chamber in the cylindrical section, interpolant in the nozzle.
+        r_out = np.where(
+            x_out < x_inlet,
+            self._r_chamber,
+            np.asarray(
+                self._r_interp(
+                    np.clip(x_out, x_inlet, float(self._x_arr[-1]))
+                )
+            ).astype(float),
+        )
         return x_out, np.asarray(r_out)
 
     # ------------------------------------------------------------------

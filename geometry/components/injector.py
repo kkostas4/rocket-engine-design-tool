@@ -54,7 +54,6 @@ if TYPE_CHECKING:
     from physics.regen.coolant import CoolingChannelGeometry
 
 
-_L_CHAMBER_DEFAULT = 0.125   # m  (reference engine per CLAUDE.md)
 _ORIFICE_RADIAL_MARGIN = 2e-3  # m  orifice centre offset inward from LOX annulus OD
 
 
@@ -65,8 +64,6 @@ def injector_sdf(
     bilayer: "BilayerWall",
     face_thickness: float = 8e-3,
     pintle_protrusion: float | None = None,
-    L_chamber: float = _L_CHAMBER_DEFAULT,
-    Ac_At: float = 4.0,
 ) -> tuple[Callable, dict]:
     """
     Build the 3D SDF of the injector face plate + pintle post.
@@ -80,8 +77,8 @@ def injector_sdf(
         Sized injector (provides pintle_OD, lox_annulus_OD, fuel_orifice_diameter,
         n_fuel_orifices).
     nozzle : RaoNozzle
-        Nozzle contour (provides x_inlet for z_chamber_start and r_throat for
-        chamber inner radius).
+        Nozzle contour (provides x_chamber_start for face plate position and
+        r_chamber for the cylindrical chamber inner radius).
     bilayer : BilayerWall
         Wall layers (used only to keep the API consistent with
         engine_assembly_sdf; not used for geometry derivation here).
@@ -90,13 +87,6 @@ def injector_sdf(
     pintle_protrusion : float or None
         How far the pintle post extends downstream from the face plate
         downstream face [m].  Default = 1.5 × pintle_OD.
-    L_chamber : float
-        Cylindrical chamber length upstream of the convergent section [m].
-        Determines z_face (axial position of the upstream face of the plate).
-    Ac_At : float
-        Chamber-to-throat area ratio [-].  Used to derive the cylindrical
-        chamber inner radius:  r_ch_inner = r_throat * sqrt(Ac_At).
-        Default 4.0 — the reference engine contraction ratio per CLAUDE.md.
 
     Returns
     -------
@@ -119,16 +109,11 @@ def injector_sdf(
     # ------------------------------------------------------------------
     # 1.  Geometry parameters
     # ------------------------------------------------------------------
-    z_conv_start = float(nozzle.x_inlet)
-    z_face = z_conv_start - L_chamber               # upstream face of plate
-    z_face_down = z_face + face_thickness            # downstream face
+    z_face = float(nozzle.x_chamber_start)           # upstream face of plate
+    z_face_down = z_face + face_thickness             # downstream face
 
-    # Cylindrical chamber inner radius from the contraction ratio.
-    # nozzle.r(x_inlet) is the convergent-arc inlet radius (~1.2*R_t for the
-    # Rao 30-degree convergent arc), which is smaller than the true chamber
-    # inner radius r_throat*sqrt(Ac/At).  We use Ac_At to obtain the correct
-    # radius so that the pintle and orifices physically fit within the face plate.
-    r_ch_inner = nozzle.r_throat * math.sqrt(Ac_At)
+    # Cylindrical chamber inner radius from nozzle (r_throat * sqrt(Ac_At)).
+    r_ch_inner = float(nozzle.r_chamber)
 
     r_pintle = pintle.pintle_OD / 2.0
     r_inner_face = pintle.lox_annulus_OD / 2.0      # hole through which LOX flows
@@ -211,8 +196,6 @@ def engine_assembly_sdf(
     channel_geometry: "CoolingChannelGeometry",
     pintle: "PintleInjector",
     face_thickness: float = 8e-3,
-    L_chamber: float = _L_CHAMBER_DEFAULT,
-    Ac_At: float = 4.0,
     n_profile_points: int = 500,
 ) -> tuple[Callable, dict]:
     """
@@ -224,15 +207,12 @@ def engine_assembly_sdf(
     Parameters
     ----------
     nozzle : RaoNozzle
+        Owns all chamber geometry (r_chamber, L_chamber, x_chamber_start).
     bilayer : BilayerWall
     channel_geometry : CoolingChannelGeometry
     pintle : PintleInjector
     face_thickness : float
         Face plate axial thickness [m].  Default 8 mm.
-    L_chamber : float
-        Cylindrical chamber length [m].  Default 0.125 m.
-    Ac_At : float
-        Chamber contraction ratio [-].  Default 4.0 (reference engine).
     n_profile_points : int
         Axial sample count for the chamber+nozzle profile interpolants.
 
@@ -252,7 +232,6 @@ def engine_assembly_sdf(
     f_main, profile = chamber_with_channels_sdf(
         rao_nozzle=nozzle,
         bilayer=bilayer,
-        L_chamber=L_chamber,
         n_profile_points=n_profile_points,
     )
 
@@ -261,15 +240,11 @@ def engine_assembly_sdf(
         nozzle=nozzle,
         bilayer=bilayer,
         face_thickness=face_thickness,
-        L_chamber=L_chamber,
-        Ac_At=Ac_At,
     )
 
     f_assembly = union(f_main, f_inj)
 
-    # Extend bbox to cover injector (face plate is upstream of z_min from
-    # chamber+nozzle profile which starts at z_chamber_start = z_face).
-    # In practice z_face == profile["z_min"] (both = z_conv_start - L_chamber).
+    # z_face == nozzle.x_chamber_start, which matches z_min from chamber profile.
     z_face = float(inj_info["z_face"])
     r_outer_max = max(float(profile["r_outer_max"]), float(inj_info["r_ch_inner"]))
 
