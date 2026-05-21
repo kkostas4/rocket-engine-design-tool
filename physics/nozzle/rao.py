@@ -53,9 +53,17 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
+
+from noyron.kernel.component import (
+    Component,
+    Renderable,
+    Sizable,
+    VerificationReport,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +253,7 @@ def rao_contour(
 
 
 @dataclass
-class RaoNozzle:
+class RaoNozzle(Component, Renderable, Sizable):
     """
     Rao parabolic bell nozzle with L*-derived cylindrical chamber section.
 
@@ -510,3 +518,124 @@ class RaoNozzle:
         R_e = self.r_throat * math.sqrt(self.epsilon)
         L_cone_15 = (R_e - self.r_throat) / math.tan(math.radians(15.0))
         return self.x_exit / L_cone_15
+
+    # ------------------------------------------------------------------
+    # Component interface
+    # ------------------------------------------------------------------
+
+    @property
+    def name(self) -> str:
+        return "RaoNozzle"
+
+    def verify(self) -> VerificationReport:
+        """Self-check returning a VerificationReport.
+
+        Checks r_throat > 0, epsilon > 1, L_chamber > 0, and
+        throat_radius_curvature > 0.  Warns if Ac_At is outside the
+        recommended range [3, 8].
+
+        Source: NASA SP-8120 (1976). "Liquid Rocket Engine Nozzles."
+                §3.1 — contraction ratio limits for stable combustion.
+                Sutton & Biblarz (2017) Table 8-1 — L* and Ac/At design ranges.
+        """
+        report = VerificationReport.ok(self.name)
+        if self.r_throat <= 0.0:
+            report = report.add(
+                "error", f"r_throat = {self.r_throat:.6f} m must be positive",
+                metric="r_throat", value=self.r_throat, threshold=0.0,
+            )
+        if self.epsilon <= 1.0:
+            report = report.add(
+                "error", f"epsilon = {self.epsilon:.3f} must be > 1",
+                metric="epsilon", value=self.epsilon, threshold=1.0,
+            )
+        if self.L_star <= 0.0:
+            report = report.add(
+                "error", f"L_star = {self.L_star:.4f} m must be positive",
+                metric="L_star", value=self.L_star, threshold=0.0,
+            )
+        if self.r_throat > 0.0 and self._L_chamber <= 0.0:
+            report = report.add(
+                "error", f"L_chamber = {self._L_chamber:.6f} m must be positive",
+                metric="L_chamber", value=self._L_chamber, threshold=0.0,
+            )
+        # Throat radius curvature = 0.382 * r_throat (Sutton §3.3).
+        # Cannot be <= 0 if r_throat > 0, but included for completeness.
+        r_c = 0.382 * self.r_throat
+        if r_c <= 0.0:
+            report = report.add(
+                "error", f"throat curvature radius = {r_c:.6f} m must be positive",
+                metric="throat_radius_curvature", value=r_c, threshold=0.0,
+            )
+        # Soft range check on contraction ratio.
+        # Source: NASA SP-8120 (1976) §3.1, Huzel & Huang (1992) §4.2.
+        if not (3.0 <= self.Ac_At <= 8.0):
+            report = report.add(
+                "warning",
+                f"Ac_At = {self.Ac_At:.2f} outside recommended range [3, 8] "
+                "(NASA SP-8120 §3.1; may affect combustion stability or L_chamber)",
+                metric="Ac_At", value=float(self.Ac_At), threshold=3.0,
+            )
+        return report
+
+    # ------------------------------------------------------------------
+    # Renderable interface
+    # ------------------------------------------------------------------
+
+    def to_sdf(self, **context: Any):
+        """SDF of the nozzle inner-surface contour (revolution about x-axis).
+
+        Returns a body-of-revolution SDF of the inner gas-wall profile from
+        x_chamber_start to x_exit.  Wall layers are NOT included — use
+        chamber_nozzle_sdf(nozzle, bilayer) for the full jacketed geometry.
+
+        context is accepted but ignored; this component is self-contained.
+        """
+        from geometry.sdf.revolution import revolve
+        x_arr, r_arr = self.contour(n=500)
+        _r_interp = interp1d(
+            x_arr, r_arr,
+            kind="linear",
+            bounds_error=False,
+            fill_value=(float(r_arr[0]), float(r_arr[-1])),
+        )
+
+        def r_of_z(z_arr: np.ndarray) -> np.ndarray:
+            return np.asarray(_r_interp(z_arr), dtype=np.float32)
+
+        return revolve(r_of_z, float(x_arr[0]), float(x_arr[-1]))
+
+    def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
+        """Axis-aligned bounding box from x_chamber_start to x_exit.
+
+        context is accepted but ignored; this component is self-contained.
+        """
+        r_exit = self.r_throat * math.sqrt(self.epsilon)
+        r_max = max(self._r_chamber, r_exit)
+        return (
+            np.array([self._x_chamber_start, -r_max, -r_max]),
+            np.array([self.x_exit, r_max, r_max]),
+        )
+
+    # ------------------------------------------------------------------
+    # Sizable interface
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def size_from(cls, requirements: Any, **context: Any) -> "RaoNozzle":
+        """Construct a RaoNozzle from EngineRequirements.
+
+        Parameters
+        ----------
+        requirements : EngineRequirements
+        context : gas (CombustionGas), m_dot (float)
+
+        Returns
+        -------
+        RaoNozzle
+        """
+        gas = context["gas"]
+        m_dot = context["m_dot"]
+        At = throat_area(m_dot, requirements.chamber_pressure, gas.c_star)
+        r_throat_val = math.sqrt(At / math.pi)
+        return cls(r_throat=r_throat_val, epsilon=requirements.expansion_ratio)

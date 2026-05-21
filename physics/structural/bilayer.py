@@ -88,7 +88,7 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
@@ -97,6 +97,7 @@ from physics.structural.liner_stress import (
     von_mises,
 )
 from physics.structural.margin import FOS_YIELD, FOS_ULTIMATE
+from noyron.kernel.component import Component, Renderable, VerificationReport
 
 if TYPE_CHECKING:
     from physics.regen.coolant import CoolingChannelGeometry
@@ -153,7 +154,7 @@ class RibGeometry:
 
 
 @dataclass
-class BilayerWall:
+class BilayerWall(Component, Renderable):
     """
     Complete bilayer wall description.
 
@@ -173,6 +174,78 @@ class BilayerWall:
     outer_jacket: WallLayer
     ribs: RibGeometry
     channel_geometry: "CoolingChannelGeometry"
+
+    # ------------------------------------------------------------------
+    # Component interface
+    # ------------------------------------------------------------------
+
+    @property
+    def name(self) -> str:
+        return "BilayerWall"
+
+    def verify(self) -> VerificationReport:
+        """Self-check returning a VerificationReport.
+
+        Checks: liner and jacket thickness > 0 at x=0, rib count > 0.
+
+        Source: NASA SP-8087 (1977) §3.3 — bilayer wall geometry constraints.
+        """
+        report = VerificationReport.ok(self.name)
+        t_lin = self.inner_liner.thickness(0.0)
+        t_jkt = self.outer_jacket.thickness(0.0)
+        if t_lin <= 0.0:
+            report = report.add(
+                "error",
+                f"inner_liner thickness at x=0 = {t_lin:.4f} m must be positive",
+                metric="t_liner", value=t_lin, threshold=0.0,
+            )
+        if t_jkt <= 0.0:
+            report = report.add(
+                "error",
+                f"outer_jacket thickness at x=0 = {t_jkt:.4f} m must be positive",
+                metric="t_jacket", value=t_jkt, threshold=0.0,
+            )
+        if self.ribs.n_ribs <= 0:
+            report = report.add(
+                "error",
+                f"n_ribs = {self.ribs.n_ribs} must be positive",
+                metric="n_ribs", value=float(self.ribs.n_ribs), threshold=1.0,
+            )
+        return report
+
+    # ------------------------------------------------------------------
+    # Renderable interface
+    # ------------------------------------------------------------------
+
+    def to_sdf(self, **context: Any):
+        """SDF of the outer jacket (without channel voids).
+
+        Requires ``nozzle`` (RaoNozzle) in context.
+        """
+        nozzle = context["nozzle"]
+        from geometry.components.chamber_nozzle import chamber_nozzle_sdf
+        sdf, _ = chamber_nozzle_sdf(rao_nozzle=nozzle, bilayer=self)
+        return sdf
+
+    def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
+        """Axis-aligned bounding box of the outer jacket.
+
+        Requires ``nozzle`` (RaoNozzle) in context.
+        """
+        nozzle = context["nozzle"]
+        r_exit = nozzle.r_throat * math.sqrt(nozzle.epsilon)
+        r_chamber = nozzle.r_chamber
+        r_max = max(
+            r_chamber + self.inner_liner.thickness(0.0)
+            + self.channel_geometry.height(0.0) + self.outer_jacket.thickness(0.0),
+            r_exit + self.inner_liner.thickness(nozzle.x_exit)
+            + self.channel_geometry.height(nozzle.x_exit)
+            + self.outer_jacket.thickness(nozzle.x_exit),
+        )
+        return (
+            np.array([nozzle.x_chamber_start, -r_max, -r_max]),
+            np.array([nozzle.x_exit, r_max, r_max]),
+        )
 
 
 # ---------------------------------------------------------------------------

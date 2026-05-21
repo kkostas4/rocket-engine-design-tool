@@ -56,16 +56,24 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
+
+import numpy as np
 
 from physics.injector.orifice import (
     injection_velocity,
     orifice_area_required,
 )
+from noyron.kernel.component import (
+    Component,
+    Renderable,
+    Sizable,
+    VerificationReport,
+)
 
 
 @dataclass
-class PintleInjector:
+class PintleInjector(Component, Renderable, Sizable):
     """
     Single-element pintle injector geometry and performance.
 
@@ -398,7 +406,7 @@ class PintleInjector:
 
         lines = [
             "=" * 60,
-            "  Pintle Injector Summary",
+            "  Pintle Injector Summary",  # noqa: E501
             "=" * 60,
             "  Inputs",
             f"    m_dot_fuel          : {self.m_dot_fuel:.4f} kg/s",
@@ -433,3 +441,137 @@ class PintleInjector:
             "=" * 60,
         ]
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Component interface
+    # ------------------------------------------------------------------
+
+    @property
+    def name(self) -> str:
+        return "PintleInjector"
+
+    def verify(self) -> VerificationReport:
+        """Self-check returning a VerificationReport.
+
+        Checks: injector pressure drops are positive, mass flow rates
+        are positive, n_fuel_orifices >= 4 (NASA SP-8089 §4 minimum for
+        stable atomisation), and TMR is within recommended range [0.5, 2.0].
+
+        Source: Dressler & Bauer (2000), AIAA 2000-3871, §3 — TMR range.
+                NASA SP-8089 (1976), §4.2 — minimum orifice count guidance.
+        """
+        report = VerificationReport.ok(self.name)
+        if (self.dP_ox is not None and self.dP_ox <= 0.0) or (
+            self.dP_fuel is not None and self.dP_fuel <= 0.0
+        ):
+            report = report.add(
+                "error",
+                f"Injector pressure drops must be positive "
+                f"(dP_ox={self.dP_ox}, dP_fuel={self.dP_fuel})",
+                metric="dP_ox",
+                value=float(self.dP_ox or 0.0),
+                threshold=0.0,
+            )
+        if self.m_dot_ox <= 0.0 or self.m_dot_fuel <= 0.0:
+            report = report.add(
+                "error",
+                f"Mass flow rates must be positive "
+                f"(m_dot_ox={self.m_dot_ox:.4f}, m_dot_fuel={self.m_dot_fuel:.4f})",
+            )
+        if self.n_fuel_orifices < 4:
+            report = report.add(
+                "error",
+                f"n_fuel_orifices = {self.n_fuel_orifices} < 4 minimum for "
+                "stable atomisation (NASA SP-8089 §4.2)",
+                metric="n_fuel_orifices",
+                value=float(self.n_fuel_orifices),
+                threshold=4.0,
+            )
+        tmr = self.TMR
+        if tmr < 0.5:
+            report = report.add(
+                "warning",
+                f"TMR = {tmr:.3f} below recommended lower bound 0.50 "
+                "(Dressler & Bauer 2000, AIAA 2000-3871, §3)",
+                metric="TMR", value=tmr, threshold=0.5,
+            )
+        elif tmr > 2.0:
+            report = report.add(
+                "warning",
+                f"TMR = {tmr:.3f} above recommended upper bound 2.00 "
+                "(Dressler & Bauer 2000, AIAA 2000-3871, §3)",
+                metric="TMR", value=tmr, threshold=2.0,
+            )
+        return report
+
+    # ------------------------------------------------------------------
+    # Renderable interface
+    # ------------------------------------------------------------------
+
+    def to_sdf(self, **context: Any):
+        """SDF of the injector face plate and pintle post.
+
+        If ``nozzle`` is in context, the SDF is in global coordinates
+        (z_face = nozzle.x_chamber_start); otherwise it uses local
+        coordinates (z_face = 0.0).
+
+        Parameters
+        ----------
+        **context : nozzle (RaoNozzle, optional), bilayer (BilayerWall, optional)
+        """
+        nozzle = context.get("nozzle")
+        bilayer = context.get("bilayer")
+        from geometry.components.injector import injector_sdf
+        sdf, _ = injector_sdf(pintle=self, nozzle=nozzle, bilayer=bilayer)
+        return sdf
+
+    def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
+        """Bounding box of the face plate + pintle post assembly.
+
+        If ``nozzle`` is in context, global coordinates are used;
+        otherwise local (z_face = 0.0).
+        """
+        nozzle = context.get("nozzle")
+        face_thickness = 8e-3
+        pintle_protrusion = 1.5 * self.pintle_OD
+        if nozzle is not None:
+            z_face = float(nozzle.x_chamber_start)
+            r_ch = float(nozzle.r_chamber)
+        else:
+            z_face = 0.0
+            r_ch = self.lox_annulus_OD  # rough local estimate
+        z_tip = z_face + face_thickness + pintle_protrusion
+        r_max = max(r_ch, self.lox_annulus_OD / 2.0)
+        return (
+            np.array([z_face, -r_max, -r_max]),
+            np.array([z_tip, r_max, r_max]),
+        )
+
+    # ------------------------------------------------------------------
+    # Sizable interface
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def size_from(cls, requirements: Any, **context: Any) -> "PintleInjector":
+        """Construct a PintleInjector from EngineRequirements.
+
+        Parameters
+        ----------
+        requirements : EngineRequirements
+        context : m_dot_ox (float), m_dot_fuel (float)
+        """
+        m_dot_ox = context["m_dot_ox"]
+        m_dot_fuel = context["m_dot_fuel"]
+        prop = requirements.propellant
+        dP_inj = 0.45 * requirements.chamber_pressure
+        return cls.from_uniform_dP(
+            dP_inj=dP_inj,
+            m_dot_ox=m_dot_ox,
+            m_dot_fuel=m_dot_fuel,
+            rho_ox=prop.density_ox,
+            rho_fuel=prop.density_fuel,
+            Cd_ox=0.6,
+            Cd_fuel=0.6,
+            pintle_OD=0.030,
+            n_fuel_orifices=20,
+        )

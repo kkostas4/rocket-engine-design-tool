@@ -328,6 +328,23 @@ class EngineDesign:
             "lcf": {k: _py(v) for k, v in self.lcf.items()},
         }
 
+    def verify_all(self) -> dict[str, "VerificationReport"]:
+        """Run verify() on every Component field in this design.
+
+        Returns
+        -------
+        dict[str, VerificationReport]
+            Maps component_name → VerificationReport for each Component field.
+        """
+        from noyron.kernel.component import Component, VerificationReport
+        reports: dict[str, VerificationReport] = {}
+        for f in dataclasses.fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, Component):
+                report = val.verify()
+                reports[report.component_name] = report
+        return reports
+
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "EngineDesign":
         """
@@ -1040,6 +1057,25 @@ class Engine:
             f"    Required life      : {req.n_cycles_required:.0f} cycles",
             f"    LCF margin         : {margin_lcf:.3f}"
             + ("  [PASS]" if margin_lcf >= 0 else "  [FAIL — increase dP_coolant_budget]"),
-            "=" * 72,
         ]
+
+        # Verification block
+        verification = design.verify_all()
+        lines.append("")
+        lines.append("  Verification")
+        for comp_name, report in verification.items():
+            warn_count = sum(1 for i in report.issues if i.severity == "warning")
+            err_count = sum(1 for i in report.issues if i.severity == "error")
+            if err_count:
+                status = f"FAIL ({err_count} error{'s' if err_count != 1 else ''})"
+            elif warn_count:
+                status = f"PASS ({warn_count} warning{'s' if warn_count != 1 else ''})"
+            else:
+                status = "PASS"
+            lines.append(f"    {comp_name:<26}: {status}")
+            for issue in report.issues:
+                tag = "WARNING" if issue.severity == "warning" else "ERROR  "
+                lines.append(f"      {tag}: {issue.message}")
+        lines.append("=" * 72)
+
         return "\n".join(lines)

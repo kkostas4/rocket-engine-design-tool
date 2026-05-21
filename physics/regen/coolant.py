@@ -42,10 +42,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
+
+from noyron.kernel.component import Component, Renderable, VerificationReport
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +56,7 @@ from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
 
 @dataclass
-class CoolingChannelGeometry:
+class CoolingChannelGeometry(Component, Renderable):
     """
     Rectangular cooling channel geometry, parametric in axial coordinate x.
 
@@ -169,6 +171,94 @@ class CoolingChannelGeometry:
         A_fin = 2.0 * H
         A_total = w + 2.0 * H
         return 1.0 - (A_fin / A_total) * (1.0 - eta_fin)
+
+    # ------------------------------------------------------------------
+    # Component interface
+    # ------------------------------------------------------------------
+
+    @property
+    def name(self) -> str:
+        return "CoolingChannelGeometry"
+
+    def verify(self) -> VerificationReport:
+        """Self-check returning a VerificationReport.
+
+        Checks: n_channels > 0, width/height/wall_thickness/land_thickness > 0
+        at x=0.  Warns if aspect ratio h/w > 8.0 or minimum feature < 0.3 mm.
+
+        Source: NASA SP-8087 (1977) §3.1 — channel aspect ratio and minimum
+                feature size guidance for milled-channel construction.
+        """
+        report = VerificationReport.ok(self.name)
+        if self.n_channels <= 0:
+            report = report.add(
+                "error", f"n_channels = {self.n_channels} must be positive",
+                metric="n_channels", value=float(self.n_channels), threshold=1.0,
+            )
+        for field_name, val in [
+            ("width", self.width(0.0)),
+            ("height", self.height(0.0)),
+            ("wall_thickness", self.wall_thickness(0.0)),
+            ("land_thickness", self.land_thickness(0.0)),
+        ]:
+            if val <= 0.0:
+                report = report.add(
+                    "error",
+                    f"{field_name}(0) = {val:.4e} m must be positive",
+                    metric=field_name, value=val, threshold=0.0,
+                )
+        w = self.width(0.0)
+        h = self.height(0.0)
+        if w > 0.0 and h / w > 8.0:
+            report = report.add(
+                "warning",
+                f"Channel aspect ratio h/w = {h/w:.2f} > 8.0 at x=0 "
+                "(NASA SP-8087 §3.1; high aspect ratio may cause secondary flow)",
+                metric="aspect_ratio", value=h / w, threshold=8.0,
+            )
+        min_feature = min(w, self.land_thickness(0.0)) if w > 0.0 else 0.0
+        if 0.0 < min_feature < 0.3e-3:
+            report = report.add(
+                "warning",
+                f"Minimum feature size = {min_feature*1e3:.3f} mm < 0.3 mm machinability limit",
+                metric="min_feature_mm", value=min_feature * 1e3, threshold=0.3,
+            )
+        return report
+
+    # ------------------------------------------------------------------
+    # Renderable interface
+    # ------------------------------------------------------------------
+
+    def to_sdf(self, **context: Any):
+        """SDF of the cooling channel layer (channels cut into outer wall).
+
+        Requires ``nozzle`` (RaoNozzle) and ``bilayer`` (BilayerWall) in context.
+        """
+        nozzle = context["nozzle"]
+        bilayer = context["bilayer"]
+        from geometry.components.cooling_channels import chamber_with_channels_sdf
+        sdf, _ = chamber_with_channels_sdf(rao_nozzle=nozzle, bilayer=bilayer)
+        return sdf
+
+    def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
+        """Axis-aligned bounding box including channel walls.
+
+        Requires ``nozzle`` (RaoNozzle) and ``bilayer`` (BilayerWall) in context.
+        """
+        nozzle = context["nozzle"]
+        bilayer = context["bilayer"]
+        r_exit = nozzle.r_throat * math.sqrt(nozzle.epsilon)
+        r_chamber = nozzle.r_chamber
+        r_max = max(
+            r_chamber + self.wall_thickness(0.0) + self.height(0.0)
+            + bilayer.outer_jacket.thickness(0.0),
+            r_exit + self.wall_thickness(nozzle.x_exit) + self.height(nozzle.x_exit)
+            + bilayer.outer_jacket.thickness(nozzle.x_exit),
+        )
+        return (
+            np.array([nozzle.x_chamber_start, -r_max, -r_max]),
+            np.array([nozzle.x_exit, r_max, r_max]),
+        )
 
 
 # ---------------------------------------------------------------------------

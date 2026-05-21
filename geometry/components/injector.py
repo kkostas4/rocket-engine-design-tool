@@ -60,8 +60,8 @@ _ORIFICE_RADIAL_MARGIN = 2e-3  # m  orifice centre offset inward from LOX annulu
 def injector_sdf(
     *,
     pintle: "PintleInjector",
-    nozzle: "RaoNozzle",
-    bilayer: "BilayerWall",
+    nozzle: "RaoNozzle | None" = None,
+    bilayer: "BilayerWall | None" = None,
     face_thickness: float = 8e-3,
     pintle_protrusion: float | None = None,
 ) -> tuple[Callable, dict]:
@@ -76,12 +76,12 @@ def injector_sdf(
     pintle : PintleInjector
         Sized injector (provides pintle_OD, lox_annulus_OD, fuel_orifice_diameter,
         n_fuel_orifices).
-    nozzle : RaoNozzle
+    nozzle : RaoNozzle or None
         Nozzle contour (provides x_chamber_start for face plate position and
-        r_chamber for the cylindrical chamber inner radius).
-    bilayer : BilayerWall
-        Wall layers (used only to keep the API consistent with
-        engine_assembly_sdf; not used for geometry derivation here).
+        r_chamber for the cylindrical chamber inner radius).  When None,
+        local coordinates are used: z_face = 0 and r_ch_inner = lox_annulus_OD.
+    bilayer : BilayerWall or None
+        Wall layers (accepted for API consistency; not used for geometry here).
     face_thickness : float
         Axial thickness of the injector face plate [m].  Default 8 mm.
     pintle_protrusion : float or None
@@ -109,11 +109,13 @@ def injector_sdf(
     # ------------------------------------------------------------------
     # 1.  Geometry parameters
     # ------------------------------------------------------------------
-    z_face = float(nozzle.x_chamber_start)           # upstream face of plate
-    z_face_down = z_face + face_thickness             # downstream face
-
-    # Cylindrical chamber inner radius from nozzle (r_throat * sqrt(Ac_At)).
-    r_ch_inner = float(nozzle.r_chamber)
+    if nozzle is not None:
+        z_face = float(nozzle.x_chamber_start)
+        r_ch_inner = float(nozzle.r_chamber)
+    else:
+        z_face = 0.0
+        r_ch_inner = pintle.lox_annulus_OD
+    z_face_down = z_face + face_thickness
 
     r_pintle = pintle.pintle_OD / 2.0
     r_inner_face = pintle.lox_annulus_OD / 2.0      # hole through which LOX flows
