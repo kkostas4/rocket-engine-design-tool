@@ -180,11 +180,18 @@ class CoolingChannelGeometry(Component, Renderable):
     def name(self) -> str:
         return "CoolingChannelGeometry"
 
-    def verify(self) -> VerificationReport:
+    def verify(self, am_rules: "Any | None" = None) -> VerificationReport:
         """Self-check returning a VerificationReport.
 
         Checks: n_channels > 0, width/height/wall_thickness/land_thickness > 0
-        at x=0.  Warns if aspect ratio h/w > 8.0 or minimum feature < 0.3 mm.
+        at x=0.  When am_rules is provided, checks manufacturability against
+        the process envelope.  When None, falls back to hardcoded range warnings.
+
+        Parameters
+        ----------
+        am_rules : AMRules or None
+            When provided, adds manufacturability checks against the process
+            envelope.  When None, only kernel-level physics checks are run.
 
         Source: NASA SP-8087 (1977) §3.1 — channel aspect ratio and minimum
                 feature size guidance for milled-channel construction.
@@ -207,22 +214,40 @@ class CoolingChannelGeometry(Component, Renderable):
                     f"{field_name}(0) = {val:.4e} m must be positive",
                     metric=field_name, value=val, threshold=0.0,
                 )
-        w = self.width(0.0)
-        h = self.height(0.0)
-        if w > 0.0 and h / w > 8.0:
-            report = report.add(
-                "warning",
-                f"Channel aspect ratio h/w = {h/w:.2f} > 8.0 at x=0 "
-                "(NASA SP-8087 §3.1; high aspect ratio may cause secondary flow)",
-                metric="aspect_ratio", value=h / w, threshold=8.0,
-            )
-        min_feature = min(w, self.land_thickness(0.0)) if w > 0.0 else 0.0
-        if 0.0 < min_feature < 0.3e-3:
-            report = report.add(
-                "warning",
-                f"Minimum feature size = {min_feature*1e3:.3f} mm < 0.3 mm machinability limit",
-                metric="min_feature_mm", value=min_feature * 1e3, threshold=0.3,
-            )
+        if am_rules is not None:
+            # Check at throat (x=0): channel dimensions vs. process envelope
+            for x_label, x_val in [("throat", 0.0)]:
+                w = self.width(x_val)
+                h = self.height(x_val)
+                t_wall = self.wall_thickness(x_val)
+                t_land = self.land_thickness(x_val)
+                for ok, msg in am_rules.check_channel(w, h, x_label):
+                    if not ok:
+                        report = report.add("error", msg)
+                ok, msg = am_rules.check_wall_thickness(t_wall, f"liner at {x_label}")
+                if not ok:
+                    report = report.add("error", msg)
+                ok, msg = am_rules.check_feature(t_land, f"land at {x_label}")
+                if not ok:
+                    report = report.add("error", msg)
+        else:
+            # Kernel-only fallback: hardcoded range warnings (no am_rules required)
+            w = self.width(0.0)
+            h = self.height(0.0)
+            if w > 0.0 and h / w > 8.0:
+                report = report.add(
+                    "warning",
+                    f"Channel aspect ratio h/w = {h/w:.2f} > 8.0 at x=0 "
+                    "(NASA SP-8087 §3.1; high aspect ratio may cause secondary flow)",
+                    metric="aspect_ratio", value=h / w, threshold=8.0,
+                )
+            min_feature = min(w, self.land_thickness(0.0)) if w > 0.0 else 0.0
+            if 0.0 < min_feature < 0.3e-3:
+                report = report.add(
+                    "warning",
+                    f"Minimum feature size = {min_feature*1e3:.3f} mm < 0.3 mm machinability limit",
+                    metric="min_feature_mm", value=min_feature * 1e3, threshold=0.3,
+                )
         return report
 
     # ------------------------------------------------------------------

@@ -104,6 +104,9 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Voxel grid spacing for STL render [m] (default: 5e-4 = 0.5 mm)")
     p.add_argument("--output", type=Path, default=None, metavar="DIR",
                    help="Output directory for --render (default: output/<timestamp>/)")
+    p.add_argument("--am-process", type=str, default=None, metavar="PROCESS",
+                   choices=["lpbf-grcop", "lpbf-inconel", "binder-jet-inconel", "subtractive-inconel"],
+                   help="Manufacturing process rules preset (default: lpbf-grcop)")
     p.add_argument("--quiet", action="store_true",
                    help="Suppress the design summary.")
     p.add_argument("--verbose", action="store_true",
@@ -180,6 +183,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p4.add_argument("--n-cycles", type=float, default=None, metavar="N")
     p4.add_argument("--pump-margin", type=float, default=None, metavar="Pa")
     p4.add_argument("--n-channels", type=int, default=None, metavar="N")
+    p4.add_argument("--am-process", type=str, default=None, metavar="PROCESS",
+                    choices=["lpbf-grcop", "lpbf-inconel", "binder-jet-inconel", "subtractive-inconel"],
+                    help="Manufacturing process rules preset (default: lpbf-grcop)")
     p4.add_argument("--verbose", action="store_true",
                     help="Show full Python tracebacks on errors.")
 
@@ -257,6 +263,7 @@ _CONFIG_FIELDS: dict[str, tuple[str, Any]] = {
     "n_cycles":       ("n_cycles_required",   100.0),
     "n_channels":     ("n_channels",          76),
     "pump_margin":    ("pump_pressure_margin", 2.0e6),
+    "am_process":     ("am_rules",            "lpbf-grcop"),
 }
 
 
@@ -297,6 +304,7 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
         "n_cycles":    args.n_cycles,
         "n_channels":  args.n_channels,
         "pump_margin": args.pump_margin,
+        "am_process":  args.am_process if hasattr(args, "am_process") else None,
     }
     for k, v in cli_map.items():
         if v is not None:
@@ -322,6 +330,17 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
         )
     propellant = _PROPELLANT_PRESETS[prop_name]
 
+    # Resolve am_process
+    from noyron.kernel.manufacturing import AM_RULES_PRESETS
+    am_process_key = str(cfg.get("am_process", "lpbf-grcop")).lower()
+    if am_process_key not in AM_RULES_PRESETS:
+        _die(
+            f"Unknown am_process '{am_process_key}'. "
+            f"Valid: {', '.join(sorted(AM_RULES_PRESETS))}",
+            verbose,
+        )
+    am_rules = AM_RULES_PRESETS[am_process_key]
+
     return EngineRequirements(
         thrust=float(cfg["thrust"]),
         chamber_pressure=float(cfg["pc"]),
@@ -333,6 +352,7 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
         dP_coolant_budget=float(cfg.get("dp_coolant", 5.0e6)),
         pump_pressure_margin=float(cfg.get("pump_margin", 2.0e6)),
         n_channels=int(cfg.get("n_channels", 76)),
+        am_rules=am_rules,
     )
 
 
@@ -365,8 +385,9 @@ def _write_outputs(
 
     # requirements.yaml  (round-trippable as --config input)
     req = design.requirements
-    from noyron.engine import _PROPELLANT_NAMES
+    from noyron.engine import _PROPELLANT_NAMES, _AM_RULES_NAMES
     prop_name = _PROPELLANT_NAMES.get(id(req.propellant), "custom")
+    am_process_key = _AM_RULES_NAMES.get(id(req.am_rules), "lpbf-grcop")
     req_yaml: dict[str, Any] = {
         "thrust":      req.thrust,
         "pc":          req.chamber_pressure,
@@ -378,6 +399,7 @@ def _write_outputs(
         "n_cycles":    req.n_cycles_required,
         "n_channels":  req.n_channels,
         "pump_margin": req.pump_pressure_margin,
+        "am_process":  am_process_key,
     }
     _write_yaml(req_yaml, output_dir / "requirements.yaml")
 
@@ -510,6 +532,7 @@ def cmd_sweep(args: argparse.Namespace) -> None:
         "n_cycles":    args.n_cycles,
         "n_channels":  args.n_channels,
         "pump_margin": args.pump_margin,
+        "am_process":  args.am_process if hasattr(args, "am_process") else None,
     }
     for k, v in cli_overrides.items():
         if v is not None:
@@ -526,6 +549,7 @@ def cmd_sweep(args: argparse.Namespace) -> None:
         )
 
     from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+    from noyron.kernel.manufacturing import AM_RULES_PRESETS
 
     prop_name = str(base_cfg["propellant"]).lower()
     if prop_name not in _PROPELLANT_PRESETS:
@@ -534,6 +558,15 @@ def cmd_sweep(args: argparse.Namespace) -> None:
             f"Valid: {', '.join(sorted(_PROPELLANT_PRESETS))}",
             verbose,
         )
+
+    am_process_key = str(base_cfg.get("am_process", "lpbf-grcop")).lower()
+    if am_process_key not in AM_RULES_PRESETS:
+        _die(
+            f"Unknown am_process '{am_process_key}'. "
+            f"Valid: {', '.join(sorted(AM_RULES_PRESETS))}",
+            verbose,
+        )
+    am_rules = AM_RULES_PRESETS[am_process_key]
 
     base_req = EngineRequirements(
         thrust=float(base_cfg["thrust"]),
@@ -546,6 +579,7 @@ def cmd_sweep(args: argparse.Namespace) -> None:
         dP_coolant_budget=float(base_cfg.get("dp_coolant", 5.0e6)),
         pump_pressure_margin=float(base_cfg.get("pump_margin", 2.0e6)),
         n_channels=int(base_cfg.get("n_channels", 76)),
+        am_rules=am_rules,
     )
 
     # ── Resolve sweep variations ────────────────────────────────────────────
@@ -618,6 +652,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         )
 
     from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+    from noyron.kernel.manufacturing import AM_RULES_PRESETS as _AM_PRESETS_OPT
 
     prop_name = str(base_cfg["propellant"]).lower()
     if prop_name not in _PROPELLANT_PRESETS:
@@ -626,6 +661,15 @@ def cmd_optimize(args: argparse.Namespace) -> None:
             f"Valid: {', '.join(sorted(_PROPELLANT_PRESETS))}",
             verbose,
         )
+
+    _am_key_opt = str(base_cfg.get("am_process", "lpbf-grcop")).lower()
+    if _am_key_opt not in _AM_PRESETS_OPT:
+        _die(
+            f"Unknown am_process '{_am_key_opt}'. "
+            f"Valid: {', '.join(sorted(_AM_PRESETS_OPT))}",
+            verbose,
+        )
+    _am_rules_opt = _AM_PRESETS_OPT[_am_key_opt]
 
     base_req = EngineRequirements(
         thrust=float(base_cfg["thrust"]),
@@ -638,6 +682,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         dP_coolant_budget=float(base_cfg.get("dp_coolant", 5.0e6)),
         pump_pressure_margin=float(base_cfg.get("pump_margin", 2.0e6)),
         n_channels=int(base_cfg.get("n_channels", 76)),
+        am_rules=_am_rules_opt,
     )
 
     # ── Free variables ─────────────────────────────────────────────────────

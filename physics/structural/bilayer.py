@@ -183,10 +183,18 @@ class BilayerWall(Component, Renderable):
     def name(self) -> str:
         return "BilayerWall"
 
-    def verify(self) -> VerificationReport:
+    def verify(self, am_rules: "Any | None" = None) -> VerificationReport:
         """Self-check returning a VerificationReport.
 
         Checks: liner and jacket thickness > 0 at x=0, rib count > 0.
+        When am_rules is provided, also checks wall thicknesses against
+        the manufacturing process envelope.
+
+        Parameters
+        ----------
+        am_rules : AMRules or None
+            When provided, adds manufacturability checks against the process
+            envelope.  When None, only physics checks are run.
 
         Source: NASA SP-8087 (1977) §3.3 — bilayer wall geometry constraints.
         """
@@ -211,6 +219,15 @@ class BilayerWall(Component, Renderable):
                 f"n_ribs = {self.ribs.n_ribs} must be positive",
                 metric="n_ribs", value=float(self.ribs.n_ribs), threshold=1.0,
             )
+        if am_rules is not None:
+            t_lin = self.inner_liner.thickness(0.0)
+            t_jkt = self.outer_jacket.thickness(0.0)
+            ok, msg = am_rules.check_wall_thickness(t_lin, "inner liner")
+            if not ok:
+                report = report.add("error", msg)
+            ok, msg = am_rules.check_wall_thickness(t_jkt, "outer jacket")
+            if not ok:
+                report = report.add("error", msg)
         return report
 
     # ------------------------------------------------------------------

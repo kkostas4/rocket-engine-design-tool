@@ -94,6 +94,7 @@ _KEY_MAP: dict[str, str] = {
     "pump_pressure_margin":  "pump_pressure_margin",
     "n_channels":            "n_channels",
     "propellant":            "propellant",
+    "am_process":            "am_rules",
 }
 
 
@@ -117,6 +118,12 @@ def _apply_overrides(base: Any, overrides: dict[str, Any]) -> Any:
             if prop_name not in _PROPELLANT_PRESETS:
                 raise ValueError(f"Unknown propellant '{prop_name}'")
             val = _PROPELLANT_PRESETS[prop_name]
+        elif field == "am_rules":
+            from noyron.kernel.manufacturing import AM_RULES_PRESETS
+            key = str(val).lower()
+            if key not in AM_RULES_PRESETS:
+                raise ValueError(f"Unknown am_process '{key}'")
+            val = AM_RULES_PRESETS[key]
         elif field == "n_channels":
             val = int(val)
         else:

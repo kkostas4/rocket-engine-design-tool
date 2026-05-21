@@ -527,12 +527,18 @@ class RaoNozzle(Component, Renderable, Sizable):
     def name(self) -> str:
         return "RaoNozzle"
 
-    def verify(self) -> VerificationReport:
+    def verify(self, am_rules: "Any | None" = None) -> VerificationReport:
         """Self-check returning a VerificationReport.
 
         Checks r_throat > 0, epsilon > 1, L_chamber > 0, and
         throat_radius_curvature > 0.  Warns if Ac_At is outside the
         recommended range [3, 8].
+
+        Parameters
+        ----------
+        am_rules : AMRules or None
+            When provided, adds manufacturability checks against the process
+            envelope.  When None, only physics checks are run.
 
         Source: NASA SP-8120 (1976). "Liquid Rocket Engine Nozzles."
                 §3.1 — contraction ratio limits for stable combustion.
@@ -576,6 +582,17 @@ class RaoNozzle(Component, Renderable, Sizable):
                 "(NASA SP-8120 §3.1; may affect combustion stability or L_chamber)",
                 metric="Ac_At", value=float(self.Ac_At), threshold=3.0,
             )
+        if am_rules is not None:
+            ok, msg = am_rules.check_feature(self.r_throat, "throat radius")
+            if not ok:
+                report = report.add("warning", msg, metric="r_throat_am",
+                                    value=self.r_throat * 1e3,
+                                    threshold=am_rules.min_feature_size * 1e3)
+            ok, msg = am_rules.check_wall_thickness(self.r_throat, "throat wall (approx r_throat)")
+            if not ok:
+                report = report.add("warning", msg, metric="r_throat_wall_am",
+                                    value=self.r_throat * 1e3,
+                                    threshold=am_rules.min_wall_thickness * 1e3)
         return report
 
     # ------------------------------------------------------------------

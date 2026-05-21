@@ -23,7 +23,10 @@ from __future__ import annotations
 
 import dataclasses
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
+
+if TYPE_CHECKING:
+    from noyron.kernel.manufacturing import AMRules
 
 import numpy as np
 
@@ -104,8 +107,15 @@ class Component(ABC):
         ...
 
     @abstractmethod
-    def verify(self) -> VerificationReport:
-        """Run self-checks and return a VerificationReport."""
+    def verify(self, am_rules: "AMRules | None" = None) -> VerificationReport:
+        """Run self-checks and return a VerificationReport.
+
+        Parameters
+        ----------
+        am_rules : AMRules or None
+            When provided, adds manufacturability checks against the process
+            envelope.  When None, only kernel-level physics checks are run.
+        """
         ...
 
 

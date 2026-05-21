@@ -11,6 +11,14 @@ from noyron.kernel.component import (
     VerificationIssue,
     VerificationReport,
 )
+from noyron.kernel.manufacturing import (
+    AMRules,
+    LPBF_GRCOP,
+    LPBF_INCONEL,
+    BINDER_JET_INCONEL,
+    SUBTRACTIVE_INCONEL,
+    AM_RULES_PRESETS,
+)
 
 __all__ = [
     "Component",
@@ -18,4 +26,10 @@ __all__ = [
     "Sizable",
     "VerificationIssue",
     "VerificationReport",
+    "AMRules",
+    "LPBF_GRCOP",
+    "LPBF_INCONEL",
+    "BINDER_JET_INCONEL",
+    "SUBTRACTIVE_INCONEL",
+    "AM_RULES_PRESETS",
 ]

@@ -450,12 +450,18 @@ class PintleInjector(Component, Renderable, Sizable):
     def name(self) -> str:
         return "PintleInjector"
 
-    def verify(self) -> VerificationReport:
+    def verify(self, am_rules: "Any | None" = None) -> VerificationReport:
         """Self-check returning a VerificationReport.
 
         Checks: injector pressure drops are positive, mass flow rates
         are positive, n_fuel_orifices >= 4 (NASA SP-8089 §4 minimum for
         stable atomisation), and TMR is within recommended range [0.5, 2.0].
+
+        Parameters
+        ----------
+        am_rules : AMRules or None
+            When provided, adds manufacturability checks against the process
+            envelope.  When None, only physics checks are run.
 
         Source: Dressler & Bauer (2000), AIAA 2000-3871, §3 — TMR range.
                 NASA SP-8089 (1976), §4.2 — minimum orifice count guidance.
@@ -502,6 +508,17 @@ class PintleInjector(Component, Renderable, Sizable):
                 "(Dressler & Bauer 2000, AIAA 2000-3871, §3)",
                 metric="TMR", value=tmr, threshold=2.0,
             )
+        if am_rules is not None:
+            ok, msg = am_rules.check_hole(self.fuel_orifice_diameter, "fuel orifice")
+            if not ok:
+                report = report.add("warning", msg, metric="fuel_orifice_diameter_am",
+                                    value=self.fuel_orifice_diameter * 1e3,
+                                    threshold=am_rules.min_hole_diameter * 1e3)
+            ok, msg = am_rules.check_feature(self.pintle_OD, "pintle OD")
+            if not ok:
+                report = report.add("warning", msg, metric="pintle_OD_am",
+                                    value=self.pintle_OD * 1e3,
+                                    threshold=am_rules.min_feature_size * 1e3)
         return report
 
     # ------------------------------------------------------------------

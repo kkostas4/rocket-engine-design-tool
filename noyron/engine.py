@@ -54,6 +54,7 @@ from physics.structural.fatigue import lcf_check
 from physics.structural.liner_stress import liner_stress_profile
 from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
 from noyron.cache import StepCache
+from noyron.kernel.manufacturing import AMRules, LPBF_GRCOP, AM_RULES_PRESETS
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -191,6 +192,9 @@ _PROPELLANT_PRESETS: dict[str, PropellantPair] = {
 # Reverse lookup (by object identity — valid because all three are module-level singletons).
 _PROPELLANT_NAMES: dict[int, str] = {id(v): k for k, v in _PROPELLANT_PRESETS.items()}
 
+# Reverse lookup for AM rules presets (by object identity).
+_AM_RULES_NAMES: dict[int, str] = {id(v): k for k, v in AM_RULES_PRESETS.items()}
+
 
 # ---------------------------------------------------------------------------
 # EngineRequirements
@@ -235,6 +239,7 @@ class EngineRequirements:
     dP_coolant_budget: float = 5.0e6  # Pa (budget consistent with D-B coolant model)
     pump_pressure_margin: float = 2.0e6
     n_channels: int = 76
+    am_rules: AMRules = LPBF_GRCOP
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +293,7 @@ class EngineDesign:
 
         req = self.requirements
         prop_name = _PROPELLANT_NAMES.get(id(req.propellant), "custom")
+        am_process = _AM_RULES_NAMES.get(id(req.am_rules), "lpbf-grcop")
         geom = self.channel_geometry
         nozzle = self.nozzle
 
@@ -304,6 +310,7 @@ class EngineDesign:
                 "dP_coolant_budget": req.dP_coolant_budget,
                 "pump_pressure_margin": req.pump_pressure_margin,
                 "n_channels": req.n_channels,
+                "am_process": am_process,
             },
             "gas": {f.name: getattr(self.gas, f.name) for f in dataclasses.fields(self.gas)},
             "nozzle": {f.name: getattr(nozzle, f.name) for f in dataclasses.fields(nozzle)},
@@ -331,17 +338,21 @@ class EngineDesign:
     def verify_all(self) -> dict[str, "VerificationReport"]:
         """Run verify() on every Component field in this design.
 
+        Passes the active am_rules from requirements to each component's
+        verify() method so manufacturability checks are included.
+
         Returns
         -------
         dict[str, VerificationReport]
             Maps component_name → VerificationReport for each Component field.
         """
         from noyron.kernel.component import Component, VerificationReport
+        am = self.requirements.am_rules
         reports: dict[str, VerificationReport] = {}
         for f in dataclasses.fields(self):
             val = getattr(self, f.name)
             if isinstance(val, Component):
-                report = val.verify()
+                report = val.verify(am_rules=am)
                 reports[report.component_name] = report
         return reports
 
@@ -375,6 +386,13 @@ class EngineDesign:
                 f"Unknown propellant '{prop_name}'. "
                 f"Valid names: {sorted(_PROPELLANT_PRESETS)}"
             )
+        am_process_key = r.get("am_process", "lpbf-grcop")
+        if am_process_key not in AM_RULES_PRESETS:
+            raise ValueError(
+                f"Unknown am_process '{am_process_key}'. "
+                f"Valid: {sorted(AM_RULES_PRESETS)}"
+            )
+        am_rules = AM_RULES_PRESETS[am_process_key]
         req = EngineRequirements(
             thrust=r["thrust"],
             chamber_pressure=r["chamber_pressure"],
@@ -387,6 +405,7 @@ class EngineDesign:
             dP_coolant_budget=r.get("dP_coolant_budget", 3.0e6),
             pump_pressure_margin=r.get("pump_pressure_margin", 2.0e6),
             n_channels=r.get("n_channels", 76),
+            am_rules=am_rules,
         )
 
         gas = CombustionGas(**d["gas"])
@@ -759,9 +778,11 @@ class Engine:
             coolant_key,
             req.T_wall_max,
             req.dP_coolant_budget,
+            id(req.am_rules),
         )
 
         def _compute_channels():
+            am = req.am_rules
             sizing_problem = ChannelSizingProblem(
                 nozzle=nozzle,
                 gas=gas,
@@ -770,10 +791,10 @@ class Engine:
                 T_wall_max=req.T_wall_max,
                 T_wall_margin=50.0,
                 dP_max=req.dP_coolant_budget,
-                min_wall_thickness=_T_LINER_M,
-                max_aspect_ratio=8.0,
-                min_channel_width=0.6e-3,
-                t_land_min=0.3e-3,
+                min_wall_thickness=am.min_wall_thickness,
+                max_aspect_ratio=am.max_internal_aspect_ratio,
+                min_channel_width=am.min_channel_width,
+                t_land_min=am.min_feature_size,
                 n_stations_opt=60,
             )
             with warnings.catch_warnings():
@@ -1006,9 +1027,11 @@ class Engine:
         margin_lcf = lcf["margin_lcf"]
         x_worst_mm = lcf["x_worst"] * 1e3
 
+        am = design.requirements.am_rules
         lines = [
             "=" * 72,
             "  Engine Design Summary",
+            f"  Manufacturing process : {am.process_name} ({am.material_family})",
             "=" * 72,
             f"  Thrust               : {req.thrust:.1f} N  ({req.thrust/4.44822:.1f} lbf)",
             f"  Pc                   : {req.chamber_pressure/1e6:.3f} MPa  "
