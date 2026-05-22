@@ -22,22 +22,22 @@ import warnings
 import numpy as np
 import pytest
 
-from physics.structural.liner_stress import (
+from noyron.rp.structural.liner_stress import (
     hoop_stress,
     liner_stress_profile,
     through_wall_thermal_stress,
     von_mises,
 )
-from physics.structural.materials import GRCOP84_PROXY
-from physics.structural.fatigue import lcf_check, manson_coffin_life
+from noyron.rp.structural.materials import GRCOP84_PROXY
+from noyron.rp.structural.fatigue import lcf_check, manson_coffin_life
 
 # ---------------------------------------------------------------------------
 # Reference engine fixtures (same as other test modules)
 # ---------------------------------------------------------------------------
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import CombustionGas
-from physics.regen.coolant import GRCOP42, CoolingChannelGeometry, CoolantInlet
-from physics.regen.solver import solve_regen
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import CombustionGas
+from noyron.rp.regen.coolant import GRCOP42, CoolingChannelGeometry, CoolantInlet
+from noyron.rp.regen.solver import solve_regen
 
 GAS = CombustionGas(
     Tc=3561.2,

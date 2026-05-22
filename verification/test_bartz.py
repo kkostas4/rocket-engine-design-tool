@@ -33,8 +33,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import (
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import (
     CombustionGas,
     adiabatic_wall_temperature,
     bartz_h,
@@ -109,7 +109,7 @@ class TestSigmaFactor:
             x=nozzle.x_inlet, nozzle=nozzle, gas=gas, T_wall=gas.Tc
         )
         # Verify the ratio h/h_simple is close to sigma=1 by computing h_simple
-        from physics.regen.bartz import bartz_h_simple
+        from noyron.rp.regen.bartz import bartz_h_simple
 
         D_t = 2 * nozzle.r_throat
         A_ratio = nozzle.area_ratio(nozzle.x_inlet)

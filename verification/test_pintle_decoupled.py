@@ -16,8 +16,8 @@ import math
 
 import pytest
 
-from physics.injector.pintle import PintleInjector
-from physics.injector.stability import check_stiffness
+from noyron.rp.injector.pintle import PintleInjector
+from noyron.rp.injector.stability import check_stiffness
 from noyron.kernel.util.units import PSI_TO_PA
 
 # ---------------------------------------------------------------------------

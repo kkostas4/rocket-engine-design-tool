@@ -19,23 +19,23 @@ import warnings
 
 import numpy as np
 
-from physics.structural.bilayer import (
+from noyron.rp.structural.bilayer import (
     BilayerWall,
     RibGeometry,
     WallLayer,
     bilayer_stress_profile,
     size_jacket_thickness,
 )
-from physics.structural.fatigue import manson_coffin_life  # noqa: E402
-from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
+from noyron.rp.structural.fatigue import manson_coffin_life  # noqa: E402
+from noyron.rp.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
 
 # ---------------------------------------------------------------------------
 # Reference engine fixtures
 # ---------------------------------------------------------------------------
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import CombustionGas
-from physics.regen.coolant import GRCOP42, CoolingChannelGeometry, CoolantInlet
-from physics.regen.solver import solve_regen
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import CombustionGas
+from noyron.rp.regen.coolant import GRCOP42, CoolingChannelGeometry, CoolantInlet
+from noyron.rp.regen.solver import solve_regen
 
 GAS = CombustionGas(
     Tc=3561.2,
@@ -271,7 +271,7 @@ class TestBilayerPassesWhereSingleWallFailed:
 
         Source: NASA SP-8087 (1977) §3.3; Cook & Coffey (1973) AIAA 73-1364.
         """
-        from physics.regen.bartz import mach_from_area_ratio
+        from noyron.rp.regen.bartz import mach_from_area_ratio
 
         regen = _get_regen()
         x_arr = regen["x"]

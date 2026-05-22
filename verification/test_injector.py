@@ -34,13 +34,13 @@ import math
 
 import pytest
 
-from physics.injector.orifice import (
+from noyron.rp.injector.orifice import (
     injection_velocity,
     orifice_area_required,
     orifice_mass_flow,
 )
-from physics.injector.pintle import PintleInjector
-from physics.injector.stability import check_stiffness, stiffness_ratio
+from noyron.rp.injector.pintle import PintleInjector
+from noyron.rp.injector.stability import check_stiffness, stiffness_ratio
 from noyron.kernel.util.units import PSI_TO_PA
 
 # ---------------------------------------------------------------------------

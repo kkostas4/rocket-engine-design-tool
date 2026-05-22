@@ -66,7 +66,7 @@ _DP_INJ = 0.45 * _PC             # Pa   uniform-ΔP injector drop
 
 
 def test_kernel_import_isolation():
-    """Importing noyron.kernel.component must not load physics.nozzle."""
+    """Importing noyron.kernel.component must not load noyron.rp.nozzle."""
     # Remove any existing cached imports so the test is deterministic.
     for key in list(sys.modules):
         if key.startswith("physics.nozzle"):
@@ -116,7 +116,7 @@ def test_verification_report_frozen():
 
 def test_raonozzle_verify_passes():
     import warnings
-    from physics.nozzle.rao import RaoNozzle
+    from noyron.rp.nozzle.rao import RaoNozzle
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -137,7 +137,7 @@ def test_raonozzle_verify_passes():
 
 
 def test_raonozzle_warns_bad_ac_at():
-    from physics.nozzle.rao import RaoNozzle
+    from noyron.rp.nozzle.rao import RaoNozzle
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -159,7 +159,7 @@ def test_raonozzle_warns_bad_ac_at():
 
 
 def test_pintleinjector_warns_tmr():
-    from physics.injector.pintle import PintleInjector
+    from noyron.rp.injector.pintle import PintleInjector
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -200,7 +200,7 @@ def test_pintleinjector_warns_tmr():
 
 def test_to_sdf_lazy_import():
     """PintleInjector.to_sdf() with no nozzle uses local-coordinate fallback."""
-    from physics.injector.pintle import PintleInjector
+    from noyron.rp.injector.pintle import PintleInjector
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -227,7 +227,7 @@ def test_to_sdf_lazy_import():
 
 @pytest.mark.slow
 def test_verify_all_reference_engine():
-    from noyron.engine import Engine, EngineRequirements, METHALOX
+    from noyron.rp.engine import Engine, EngineRequirements, METHALOX
 
     req = EngineRequirements(
         thrust=4448.22,

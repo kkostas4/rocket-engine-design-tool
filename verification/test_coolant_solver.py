@@ -39,10 +39,10 @@ import warnings
 import numpy as np
 import pytest
 
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import CombustionGas
-from physics.regen.coolant import GRCOP42, CoolingChannelGeometry, CoolantInlet
-from physics.regen.solver import solve_regen
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import CombustionGas
+from noyron.rp.regen.coolant import GRCOP42, CoolingChannelGeometry, CoolantInlet
+from noyron.rp.regen.solver import solve_regen
 
 # ---------------------------------------------------------------------------
 # Reference engine fixtures

@@ -45,11 +45,11 @@ import warnings
 import numpy as np
 import pytest
 
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import CombustionGas
-from physics.regen.coolant import GRCOP42, CoolantInlet
-from physics.regen.sizing import ChannelSizingError, ChannelSizingProblem, size_channels
-from physics.regen.solver import solve_regen
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import CombustionGas
+from noyron.rp.regen.coolant import GRCOP42, CoolantInlet
+from noyron.rp.regen.sizing import ChannelSizingError, ChannelSizingProblem, size_channels
+from noyron.rp.regen.solver import solve_regen
 from noyron.kernel.util.exceptions import SizingInfeasibleError
 
 # ---------------------------------------------------------------------------
@@ -365,7 +365,7 @@ class TestSizingImprovesOnNaive:
         This test does not depend on achieving any absolute target — it simply
         confirms the sizer is doing useful work by reducing T_wall.
         """
-        from physics.regen.coolant import CoolingChannelGeometry  # noqa: PLC0415
+        from noyron.rp.regen.coolant import CoolingChannelGeometry  # noqa: PLC0415
 
         naive_geom = CoolingChannelGeometry(
             n_channels=48,

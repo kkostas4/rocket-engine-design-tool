@@ -39,7 +39,7 @@ from typing import Any
 
 def _propellant_map() -> dict[str, Any]:
     """Return {name: PropellantPair} without triggering heavy imports at parse time."""
-    from noyron.engine import _PROPELLANT_PRESETS
+    from noyron.rp.engine import _PROPELLANT_PRESETS
     return _PROPELLANT_PRESETS
 
 
@@ -283,7 +283,7 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
     SystemExit
         If a required field is missing or the propellant name is unknown.
     """
-    from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+    from noyron.rp.engine import EngineRequirements, _PROPELLANT_PRESETS
 
     # Start with file values (if any)
     cfg: dict[str, Any] = {}
@@ -368,7 +368,7 @@ def _write_outputs(
     verbose: bool,
 ) -> None:
     """Write design.json, summary.txt, requirements.yaml, and optionally STLs."""
-    from noyron.engine import Engine
+    from noyron.rp.engine import Engine
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -385,7 +385,7 @@ def _write_outputs(
 
     # requirements.yaml  (round-trippable as --config input)
     req = design.requirements
-    from noyron.engine import _PROPELLANT_NAMES, _AM_RULES_NAMES
+    from noyron.rp.engine import _PROPELLANT_NAMES, _AM_RULES_NAMES
     prop_name = _PROPELLANT_NAMES.get(id(req.propellant), "custom")
     am_process_key = _AM_RULES_NAMES.get(id(req.am_rules), "lpbf-grcop")
     req_yaml: dict[str, Any] = {
@@ -436,7 +436,7 @@ def _die(msg: str, verbose: bool = False, exc: BaseException | None = None) -> N
 # ---------------------------------------------------------------------------
 
 def cmd_design(args: argparse.Namespace) -> None:
-    from noyron.engine import Engine
+    from noyron.rp.engine import Engine
     from noyron.kernel.util.exceptions import SizingInfeasibleError
 
     verbose = args.verbose
@@ -478,7 +478,7 @@ def cmd_design(args: argparse.Namespace) -> None:
 
 
 def cmd_summary(args: argparse.Namespace) -> None:
-    from noyron.engine import Engine, EngineDesign
+    from noyron.rp.engine import Engine, EngineDesign
 
     design_json = args.design_dir / "design.json"
     if not design_json.exists():
@@ -548,7 +548,7 @@ def cmd_sweep(args: argparse.Namespace) -> None:
             verbose,
         )
 
-    from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+    from noyron.rp.engine import EngineRequirements, _PROPELLANT_PRESETS
     from noyron.kernel.manufacturing import AM_RULES_PRESETS
 
     prop_name = str(base_cfg["propellant"]).lower()
@@ -651,7 +651,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
             verbose,
         )
 
-    from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+    from noyron.rp.engine import EngineRequirements, _PROPELLANT_PRESETS
     from noyron.kernel.manufacturing import AM_RULES_PRESETS as _AM_PRESETS_OPT
 
     prop_name = str(base_cfg["propellant"]).lower()
@@ -767,7 +767,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
 
 
 def cmd_render(args: argparse.Namespace) -> None:
-    from noyron.engine import Engine, EngineDesign
+    from noyron.rp.engine import Engine, EngineDesign
     from noyron.kernel.util.exceptions import SizingInfeasibleError
 
     design_json = args.design_dir / "design.json"

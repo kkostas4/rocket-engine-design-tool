@@ -3,7 +3,7 @@ noyron — computational engine model package.
 
 Top-level entry point::
 
-    from noyron.engine import Engine, EngineRequirements, METHALOX
+    from noyron import Engine, EngineRequirements, METHALOX
 
     req = EngineRequirements(
         thrust=4448.22,
@@ -16,11 +16,16 @@ Top-level entry point::
     design = engine.design()
     print(engine.summary(design))
 
-Names are loaded lazily so that ``import noyron.kernel.component`` (or any
-``from physics.* import`` that pulls in the kernel ABCs) does NOT eagerly
-trigger a full load of ``noyron.engine``.  This prevents the circular
-import:  physics.nozzle.rao -> noyron.kernel.component -> (noyron.__init__)
--> noyron.engine -> physics.nozzle.rao.
+Architecture
+------------
+noyron.kernel   Domain-agnostic geometry (SDF, mesh), heat exchanger kernel, utilities.
+noyron.rp       Rocket Propulsion domain: thermochem, nozzle, injector, regen, structural.
+noyron.hx       Heat Exchanger domain: plate-fin and other generic HX designs.
+
+Names are loaded lazily so that ``import noyron.kernel.component`` does NOT
+eagerly trigger a full load of ``noyron.rp.engine``.  This prevents the
+circular import:  noyron.rp.nozzle.rao -> noyron.kernel.component ->
+(noyron.__init__) -> noyron.rp.engine -> noyron.rp.nozzle.rao.
 """
 
 _ENGINE_NAMES = frozenset({
@@ -37,7 +42,7 @@ _SWEEP_NAMES = frozenset({"SweepConfig", "run_sweep", "cartesian_points"})
 
 def __getattr__(name: str):
     if name in _ENGINE_NAMES:
-        from noyron import engine as _e
+        from noyron.rp import engine as _e
         return getattr(_e, name)
     if name in _SWEEP_NAMES:
         from noyron import sweep as _s

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from physics.thermochem.cea import CEA
+from noyron.rp.thermochem.cea import CEA
 from noyron.kernel.util.units import PSI_TO_PA
 
 # ---------------------------------------------------------------------------

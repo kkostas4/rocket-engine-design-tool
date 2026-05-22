@@ -49,15 +49,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import CombustionGas, mach_from_area_ratio
-from physics.regen.coolant import GRCOP42, CoolantInlet
-from physics.regen.sizing import ChannelSizingProblem, size_channels
-from physics.regen.solver import solve_regen
-from physics.structural.fatigue import lcf_check
-from physics.structural.liner_stress import liner_stress_profile
-from physics.structural.margin import check_all_margins, print_structural_report
-from physics.structural.materials import GRCOP84_PROXY
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import CombustionGas, mach_from_area_ratio
+from noyron.rp.regen.coolant import GRCOP42, CoolantInlet
+from noyron.rp.regen.sizing import ChannelSizingProblem, size_channels
+from noyron.rp.regen.solver import solve_regen
+from noyron.rp.structural.fatigue import lcf_check
+from noyron.rp.structural.liner_stress import liner_stress_profile
+from noyron.rp.structural.margin import check_all_margins, print_structural_report
+from noyron.rp.structural.materials import GRCOP84_PROXY
 
 # ---------------------------------------------------------------------------
 # Reference engine

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from physics.regen.bartz import bartz_h_simple
+from noyron.rp.regen.bartz import bartz_h_simple
 
 # ---------------------------------------------------------------------------
 # Reference engine conditions

@@ -23,7 +23,7 @@ Usage
 
 from __future__ import annotations
 
-from physics.injector.pintle import PintleInjector
+from noyron.rp.injector.pintle import PintleInjector
 from noyron.kernel.util.units import PSI_TO_PA
 
 # ---------------------------------------------------------------------------

@@ -230,14 +230,14 @@ class TestChamberNozzleVolumeSanity:
         Source: Pappus centroid theorem — volume of revolution
             V = pi * integral(r(z)^2, z_min, z_max).
         """
-        from geometry.components.chamber_nozzle import chamber_nozzle_sdf
+        from noyron.rp.geometry.chamber_nozzle import chamber_nozzle_sdf
         from noyron.kernel.geometry.mesh.extractor import sdf_to_mesh, adaptive_bbox
-        from physics.nozzle.rao import RaoNozzle
-        from physics.structural.bilayer import (
+        from noyron.rp.nozzle.rao import RaoNozzle
+        from noyron.rp.structural.bilayer import (
             BilayerWall, WallLayer, RibGeometry,
         )
-        from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
-        from physics.regen.coolant import CoolingChannelGeometry
+        from noyron.rp.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
+        from noyron.rp.regen.coolant import CoolingChannelGeometry
 
         # Small nozzle for speed
         with warnings.catch_warnings():

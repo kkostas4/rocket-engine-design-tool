@@ -42,7 +42,7 @@ import matplotlib  # type: ignore[import-untyped]
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 
-from physics.injector.discharge import cd_lichtarowicz
+from noyron.rp.injector.discharge import cd_lichtarowicz
 
 # ---------------------------------------------------------------------------
 # Constants

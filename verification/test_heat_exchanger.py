@@ -52,10 +52,10 @@ from noyron.kernel.heat_exchanger.correlations import (
     haaland_f,
 )
 from noyron.kernel.heat_exchanger.solver import solve_heat_exchanger
-from physics.regen.rocket_regen import solve_rocket_regen
-from physics.regen.bartz import CombustionGas
-from physics.regen.coolant import GRCOP42, CoolantInlet, CoolingChannelGeometry
-from physics.nozzle.rao import RaoNozzle
+from noyron.rp.regen.rocket_regen import solve_rocket_regen
+from noyron.rp.regen.bartz import CombustionGas
+from noyron.rp.regen.coolant import GRCOP42, CoolantInlet, CoolingChannelGeometry
+from noyron.rp.nozzle.rao import RaoNozzle
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ class TestRegenResultsUnchanged:
     def both_solutions(self):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            from physics.regen.solver import solve_regen
+            from noyron.rp.regen.solver import solve_regen
             sol_shim = solve_regen(
                 nozzle=_NOZZLE,
                 gas=_GAS,

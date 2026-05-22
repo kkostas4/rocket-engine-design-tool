@@ -42,7 +42,7 @@ def test_rules_are_frozen():
 @pytest.mark.slow
 def test_default_design_passes_lpbf_grcop():
     """Reference engine with LPBF_GRCOP (default) must have no errors in verify_all()."""
-    from noyron.engine import Engine, EngineRequirements, METHALOX
+    from noyron.rp.engine import Engine, EngineRequirements, METHALOX
 
     req = EngineRequirements(
         thrust=4448.22,
@@ -82,7 +82,7 @@ def test_design_fails_subtractive_for_channels():
     - ChannelSizingError / SizingInfeasibleError raised during design(), OR
     - The design succeeds but verify_all() finds errors
     """
-    from noyron.engine import Engine, EngineRequirements, METHALOX
+    from noyron.rp.engine import Engine, EngineRequirements, METHALOX
     from noyron.kernel.manufacturing import SUBTRACTIVE_INCONEL
 
     req = EngineRequirements(
@@ -124,7 +124,7 @@ def test_design_fails_subtractive_for_channels():
 
 def test_binder_jet_allows_finer_channels():
     """0.45 mm channel width: passes BINDER_JET_INCONEL (min 0.4mm), fails LPBF_GRCOP (min 0.6mm)."""
-    from physics.regen.coolant import CoolingChannelGeometry
+    from noyron.rp.regen.coolant import CoolingChannelGeometry
     from noyron.kernel.manufacturing import BINDER_JET_INCONEL, LPBF_GRCOP
 
     # 0.45 mm channel width — between BINDER_JET min (0.4mm) and LPBF_GRCOP min (0.6mm)
@@ -170,7 +170,7 @@ def test_binder_jet_allows_finer_channels():
 @pytest.mark.slow
 def test_existing_scalar_results_unchanged():
     """Adding AMRules must not change throat radius or other geometry scalars."""
-    from noyron.engine import Engine, EngineRequirements, METHALOX
+    from noyron.rp.engine import Engine, EngineRequirements, METHALOX
 
     # Reference values from CLAUDE.md
     R_THROAT_REF = 0.022313 / 2   # m — 22.313 mm throat diameter
@@ -201,7 +201,7 @@ def test_existing_scalar_results_unchanged():
 @pytest.mark.slow
 def test_summary_shows_active_rules():
     """Engine.summary() must include the active manufacturing process name."""
-    from noyron.engine import Engine, EngineRequirements, METHALOX
+    from noyron.rp.engine import Engine, EngineRequirements, METHALOX
 
     req = EngineRequirements(
         thrust=4448.22,

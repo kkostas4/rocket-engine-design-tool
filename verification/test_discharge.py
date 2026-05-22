@@ -22,8 +22,8 @@ import warnings
 
 import pytest
 
-from physics.injector.discharge import cd_iterative, cd_lichtarowicz
-from physics.injector.pintle import PintleInjector
+from noyron.rp.injector.discharge import cd_iterative, cd_lichtarowicz
+from noyron.rp.injector.pintle import PintleInjector
 from noyron.kernel.util.units import PSI_TO_PA
 
 # ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ class TestLOXAnnulusUntouched:
             Cd_fuel=0.6,   # explicit
         )
         # LOX annulus area must use Cd_ox=0.65, not Lichtarowicz.
-        from physics.injector.orifice import orifice_area_required
+        from noyron.rp.injector.orifice import orifice_area_required
         A_expected = orifice_area_required(1.1144, 0.65, 1116.0, DP_FUEL)
         assert p.lox_annulus_area == pytest.approx(A_expected, rel=1e-12)
 
@@ -232,7 +232,7 @@ class TestLOXAnnulusUntouched:
             mu_fuel=MU_FUEL,
         )
         # V_ox must match what Cd_ox=0.65 would give.
-        from physics.injector.orifice import orifice_area_required, injection_velocity
+        from noyron.rp.injector.orifice import orifice_area_required, injection_velocity
         A_ox_expected = orifice_area_required(1.1144, 0.65, 1116.0, DP_FUEL)
         V_ox_expected = injection_velocity(1.1144, A_ox_expected, 1116.0)
         assert p.V_ox == pytest.approx(V_ox_expected, rel=1e-12)

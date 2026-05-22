@@ -19,7 +19,7 @@ import math
 import numpy as np
 import pytest
 
-from physics.nozzle.rao import RaoNozzle, rao_contour, throat_area
+from noyron.rp.nozzle.rao import RaoNozzle, rao_contour, throat_area
 
 # ---------------------------------------------------------------------------
 # Reference values (CLAUDE.md)

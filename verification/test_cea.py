@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import pytest
 
-from noyron.engine import METHALOX
-from physics.thermochem.cea import cea_combustion, cea_isp_vac
+from noyron.rp.engine import METHALOX
+from noyron.rp.thermochem.cea import cea_combustion, cea_isp_vac
 from noyron.kernel.util.units import PSI_TO_PA
 
 _PC_REF = 6_894_800.0  # 1000 psia in Pa
@@ -83,7 +83,7 @@ class TestVariesWithMR:
         Vacuum Isp (c* × Cf_vac / g0) peaks near MR=3.3-3.7 for methalox.
         Uses the full isentropic Cf formula (including pressure thrust at Pa=0).
         """
-        from noyron.engine import _thrust_coefficient
+        from noyron.rp.engine import _thrust_coefficient
         _G0 = 9.80665
         eps = 10.605
 
@@ -178,7 +178,7 @@ class TestIspVac:
         which inflates Cf and overestimates Isp.  Equilibrium expansion
         correctly gives a lower value there, shifting the peak to higher MR.
         """
-        from noyron.engine import _thrust_coefficient
+        from noyron.rp.engine import _thrust_coefficient
         _G0 = 9.80665
         mr = 2.5
         gas = cea_combustion(propellant=METHALOX, Pc=_PC_7, MR=mr)

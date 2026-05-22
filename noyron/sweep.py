@@ -100,7 +100,7 @@ _KEY_MAP: dict[str, str] = {
 
 def _apply_overrides(base: Any, overrides: dict[str, Any]) -> Any:
     """Return a new EngineRequirements with the given overrides applied."""
-    from noyron.engine import EngineRequirements, _PROPELLANT_PRESETS
+    from noyron.rp.engine import EngineRequirements, _PROPELLANT_PRESETS
 
     kwargs: dict[str, Any] = {
         f.name: getattr(base, f.name) for f in dataclasses.fields(base)
@@ -151,7 +151,7 @@ _CSV_COLS = [
 
 
 def _propellant_name_str(pair: Any) -> str:
-    from noyron.engine import _PROPELLANT_PRESETS
+    from noyron.rp.engine import _PROPELLANT_PRESETS
     for name, preset in _PROPELLANT_PRESETS.items():
         if preset == pair:
             return name
@@ -160,7 +160,7 @@ def _propellant_name_str(pair: Any) -> str:
 
 def _success_row(point_id: int, req: Any, design: Any, dt: float) -> dict[str, Any]:
     import numpy as np
-    from physics.thermochem.cea import cea_isp_vac
+    from noyron.rp.thermochem.cea import cea_isp_vac
 
     rs = design.regen_solution
     struc = design.structural
@@ -273,7 +273,7 @@ def design_one_point(
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            from noyron.engine import Engine
+            from noyron.rp.engine import Engine
             design = Engine(req).design()
     except Exception as exc:
         return _error_row(point_id, req, str(exc), time.perf_counter() - t0)
@@ -286,7 +286,7 @@ def design_one_point(
         with (point_dir / "design.json").open("w") as fh:
             json.dump(design.to_dict(), fh, indent=2)
 
-        from noyron.engine import Engine as _Eng
+        from noyron.rp.engine import Engine as _Eng
         (point_dir / "summary.txt").write_text(
             _Eng(req).summary(design), encoding="utf-8"
         )
@@ -342,7 +342,7 @@ def _row_from_existing(
     try:
         with design_json.open() as fh:
             data = json.load(fh)
-        from noyron.engine import EngineDesign
+        from noyron.rp.engine import EngineDesign
         design = EngineDesign.from_dict(data)
         req = _apply_overrides(base, overrides)
         return _success_row(point_id, req, design, 0.0)

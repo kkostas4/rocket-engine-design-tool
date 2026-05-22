@@ -76,7 +76,7 @@ class OptimizationConfig:
 
 def _extract_metrics(req: Any, design: Any) -> dict[str, float]:
     """Extract a flat float-valued metrics dict from a completed design."""
-    from physics.thermochem.cea import cea_isp_vac
+    from noyron.rp.thermochem.cea import cea_isp_vac
 
     rs = design.regen_solution
     struc = design.structural
@@ -206,7 +206,7 @@ def design_eval(
         a finite positive value >= penalty_scale.
     """
     from noyron.sweep import _apply_overrides
-    from noyron.engine import Engine
+    from noyron.rp.engine import Engine
 
     overrides = dict(zip(free_var_names, x))
     try:
@@ -294,7 +294,7 @@ def _write_outputs(
     feasible: bool,
 ) -> None:
     """Write best_design.yaml, best_design.json, best_summary.txt."""
-    from noyron.engine import Engine, _PROPELLANT_NAMES
+    from noyron.rp.engine import Engine, _PROPELLANT_NAMES
 
     out = config.output_dir
 
@@ -371,7 +371,7 @@ def run_optimization(config: OptimizationConfig) -> dict[str, Any]:
         def _storing_func(x: Any) -> float:
             n_evals_tracker[0] += 1
             from noyron.sweep import _apply_overrides
-            from noyron.engine import Engine
+            from noyron.rp.engine import Engine
 
             overrides = dict(zip(_fvn, x))
             try:
@@ -432,7 +432,7 @@ def run_optimization(config: OptimizationConfig) -> dict[str, Any]:
             n_evals_tracker[0] += 1
             try:
                 from noyron.sweep import _apply_overrides
-                from noyron.engine import Engine
+                from noyron.rp.engine import Engine
 
                 req_i = _apply_overrides(config.base, dict(zip(free_var_names, xk)))
                 with warnings.catch_warnings():
@@ -533,7 +533,7 @@ def run_optimization(config: OptimizationConfig) -> dict[str, Any]:
         feasible = rec_best["feasible"]
     else:
         from noyron.sweep import _apply_overrides
-        from noyron.engine import Engine
+        from noyron.rp.engine import Engine
 
         overrides = dict(zip(free_var_names, best_x))
         try:

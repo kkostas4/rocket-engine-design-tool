@@ -23,7 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np  # type: ignore[import-untyped]
 
-from physics.nozzle.rao import RaoNozzle
+from noyron.rp.nozzle.rao import RaoNozzle
 
 EPS_LIST = [10, 20, 40, 80]
 R_T = 0.050  # 50 mm throat radius (representative scale)

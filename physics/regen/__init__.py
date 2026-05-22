@@ -1,17 +1,7 @@
-"""
-Regenerative cooling subsystem: Bartz h, channel sizing, T_wall.
-
-All public names from the pre-refactor API remain importable here.
-New code should import from physics.heat_exchanger directly.
-"""
-
-from physics.regen.bartz import CombustionGas, mach_from_area_ratio
-from physics.regen.coolant import (
-    CoolingChannelGeometry,
-    CoolantInlet,
-    GRCOP42,
-    INCONEL718,
-    WallMaterial,
+import warnings
+warnings.warn(
+    "physics.regen is deprecated; use noyron.rp.regen",
+    DeprecationWarning,
+    stacklevel=2,
 )
-from physics.regen.sizing import ChannelSizingProblem, size_channels
-from physics.regen.solver import solve_regen
+from noyron.rp.regen import *  # noqa: F401, F403, E402

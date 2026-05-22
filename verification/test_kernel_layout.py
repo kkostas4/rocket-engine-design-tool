@@ -2,9 +2,12 @@
 test_kernel_layout.py
 =====================
 
-Phase 1 regression tests: kernel modules are in noyron/kernel/; old paths
-are backward-compat shims that emit DeprecationWarning; all internal imports
-use the new paths so there are no DeprecationWarnings on the hot path.
+Phase 1 + Phase 2 regression tests:
+  - Phase 1: kernel modules in noyron/kernel/; old geometry/sdf, geometry/mesh,
+    physics/heat_exchanger, physics/util paths emit DeprecationWarning shims.
+  - Phase 2: rp modules in noyron/rp/; old physics/* and geometry/components
+    paths emit DeprecationWarning shims.
+  - Hot path: importing noyron.rp.engine fires no DeprecationWarnings.
 """
 
 from __future__ import annotations
@@ -106,6 +109,41 @@ class TestDeprecationShims:
         dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
         assert dep_warnings, "expected DeprecationWarning from physics.heat_exchanger.rocket_regen shim"
 
+    # --- Phase 2 shims ---
+
+    def test_physics_nozzle_shim_works(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mod = importlib.import_module("physics.nozzle.rao")
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert dep_warnings, "expected DeprecationWarning from physics.nozzle.rao shim"
+
+    def test_physics_regen_shim_works(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mod = importlib.import_module("physics.regen.bartz")
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert dep_warnings, "expected DeprecationWarning from physics.regen.bartz shim"
+
+    def test_physics_structural_shim_works(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mod = importlib.import_module("physics.structural.bilayer")
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert dep_warnings, "expected DeprecationWarning from physics.structural.bilayer shim"
+
+    def test_geometry_components_shim_works(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            mod = importlib.import_module("geometry.components.chamber_nozzle")
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert dep_warnings, "expected DeprecationWarning from geometry.components.chamber_nozzle shim"
+
+    def test_noyron_hx_importable(self):
+        """noyron.hx stub is importable and exports PlateFinHeatExchanger."""
+        from noyron.hx import PlateFinHeatExchanger  # noqa: F401
+        assert hasattr(PlateFinHeatExchanger, "hydraulic_diameter_cold")
+
 
 # ---------------------------------------------------------------------------
 # 3. Hot path: no DeprecationWarnings on normal engine import
@@ -116,7 +154,7 @@ class TestNoInternalDeprecationWarnings:
     """Internal code uses new paths — importing the engine emits no DeprecationWarnings."""
 
     def test_engine_import_no_deprecation(self):
-        """noyron.engine (and all its internal imports) must not fire DeprecationWarning."""
+        """noyron.rp.engine (and all its internal imports) must not fire DeprecationWarning."""
         # Strip engine + physics from module cache so re-import is fresh
         to_remove = [
             k for k in sys.modules
@@ -127,19 +165,21 @@ class TestNoInternalDeprecationWarnings:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            importlib.import_module("noyron.engine")
+            importlib.import_module("noyron.rp.engine")
 
+        shim_paths = [
+            "geometry/sdf", "geometry/mesh",
+            "physics/heat_exchanger", "physics/util",
+            "physics/nozzle", "physics/regen", "physics/structural",
+            "physics/injector", "physics/thermochem", "geometry/components",
+        ]
         dep_warnings = [
             x for x in w
             if issubclass(x.category, DeprecationWarning)
             and "deprecated" in str(x.message).lower()
-            # Only flag our own shim warnings, not third-party
-            and any(
-                path in str(x.filename)
-                for path in ["geometry/sdf", "geometry/mesh", "physics/heat_exchanger", "physics/util"]
-            )
+            and any(path in str(x.filename).replace("\\", "/") for path in shim_paths)
         ]
         assert not dep_warnings, (
-            f"noyron.engine import triggered {len(dep_warnings)} DeprecationWarning(s):\n"
-            + "\n".join(f"  {w.filename}:{w.lineno}: {w.message}" for w in dep_warnings)
+            f"noyron.rp.engine import triggered {len(dep_warnings)} DeprecationWarning(s):\n"
+            + "\n".join(f"  {x.filename}:{x.lineno}: {x.message}" for x in dep_warnings)
         )

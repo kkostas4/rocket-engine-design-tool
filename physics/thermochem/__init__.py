@@ -1,5 +1,7 @@
-"""Thermochemistry subsystem: CEA wrapper, propellant properties."""
-
-from physics.thermochem.cea import CEA, cea_combustion, cea_isp_vac
-
-__all__ = ["CEA", "cea_combustion", "cea_isp_vac"]
+import warnings
+warnings.warn(
+    "physics.thermochem is deprecated; use noyron.rp.thermochem",
+    DeprecationWarning,
+    stacklevel=2,
+)
+from noyron.rp.thermochem import *  # noqa: F401, F403, E402

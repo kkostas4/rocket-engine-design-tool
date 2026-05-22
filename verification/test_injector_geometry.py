@@ -21,20 +21,20 @@ import math
 import numpy as np
 import pytest
 
-from geometry.components.injector import injector_sdf
-from physics.injector.pintle import PintleInjector
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.coolant import GRCOP42, CoolingChannelGeometry
-from physics.regen.sizing import ChannelSizingProblem, size_channels
-from physics.structural.bilayer import (
+from noyron.rp.geometry.injector import injector_sdf
+from noyron.rp.injector.pintle import PintleInjector
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.coolant import GRCOP42, CoolingChannelGeometry
+from noyron.rp.regen.sizing import ChannelSizingProblem, size_channels
+from noyron.rp.structural.bilayer import (
     BilayerWall,
     RibGeometry,
     WallLayer,
     size_jacket_thickness,
 )
-from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
-from physics.regen.bartz import CombustionGas
-from physics.regen.coolant import CoolantInlet
+from noyron.rp.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
+from noyron.rp.regen.bartz import CombustionGas
+from noyron.rp.regen.coolant import CoolantInlet
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ def test_assembly_watertight(bilayer_and_geometry, tmp_path):
     Full engine assembly STL at 0.5 mm voxels is watertight (manifold mesh).
     """
     import warnings
-    from geometry.components.injector import engine_assembly_sdf
+    from noyron.rp.geometry.injector import engine_assembly_sdf
     from noyron.kernel.geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
     from noyron.kernel.geometry.mesh.extractor import adaptive_bbox
     from noyron.kernel.geometry.mesh.stl_export import is_watertight

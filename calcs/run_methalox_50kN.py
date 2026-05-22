@@ -125,17 +125,17 @@ print(f"  {'-'*30} {'-'*18} {'-'*18} {'-'*8}")
 # modules directly (same as calcs/ do) and compare to the orchestrator output.
 
 # Re-run the individual modules for comparison
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import CombustionGas, mach_from_area_ratio
-from physics.regen.coolant import GRCOP42, CoolantInlet
-from physics.regen.sizing import ChannelSizingProblem, size_channels
-from physics.regen.solver import solve_regen
-from physics.structural.bilayer import (
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import CombustionGas, mach_from_area_ratio
+from noyron.rp.regen.coolant import GRCOP42, CoolantInlet
+from noyron.rp.regen.sizing import ChannelSizingProblem, size_channels
+from noyron.rp.regen.solver import solve_regen
+from noyron.rp.structural.bilayer import (
     BilayerWall, RibGeometry, WallLayer,
     bilayer_stress_profile, size_jacket_thickness,
 )
-from physics.structural.fatigue import lcf_check
-from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
+from noyron.rp.structural.fatigue import lcf_check
+from noyron.rp.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
 
 print()
 print("  (Re-running calcs/ pipeline standalone for comparison…)")

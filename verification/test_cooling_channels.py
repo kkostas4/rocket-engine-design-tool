@@ -26,15 +26,15 @@ import warnings
 
 import numpy as np
 
-from geometry.components.cooling_channels import (
+from noyron.rp.geometry.cooling_channels import (
     all_channels_sdf,
     axial_channel_sdf,
     chamber_with_channels_sdf,
 )
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.coolant import CoolingChannelGeometry
-from physics.structural.bilayer import BilayerWall, RibGeometry, WallLayer
-from physics.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.coolant import CoolingChannelGeometry
+from noyron.rp.structural.bilayer import BilayerWall, RibGeometry, WallLayer
+from noyron.rp.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ class TestChamberWithChannelsVolume:
 
         Source: Pappus centroid theorem; NASA SP-8087 §3.1.
         """
-        from geometry.components.chamber_nozzle import chamber_nozzle_sdf
+        from noyron.rp.geometry.chamber_nozzle import chamber_nozzle_sdf
         from noyron.kernel.geometry.mesh.extractor import adaptive_bbox, sdf_to_mesh
 
         import trimesh  # type: ignore[import-untyped]

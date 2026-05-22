@@ -30,8 +30,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np  # type: ignore[import-untyped]
 
-from physics.nozzle.rao import RaoNozzle
-from physics.regen.bartz import CombustionGas, heat_flux_profile
+from noyron.rp.nozzle.rao import RaoNozzle
+from noyron.rp.regen.bartz import CombustionGas, heat_flux_profile
 
 # ---------------------------------------------------------------------------
 # Reference engine (CLAUDE.md)
