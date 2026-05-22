@@ -50,7 +50,7 @@ from physics.regen.bartz import CombustionGas
 from physics.regen.coolant import GRCOP42, CoolantInlet
 from physics.regen.sizing import ChannelSizingError, ChannelSizingProblem, size_channels
 from physics.regen.solver import solve_regen
-from physics.util.exceptions import SizingInfeasibleError
+from noyron.kernel.util.exceptions import SizingInfeasibleError
 
 # ---------------------------------------------------------------------------
 # Reference engine fixtures

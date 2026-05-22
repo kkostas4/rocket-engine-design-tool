@@ -73,7 +73,7 @@ from physics.nozzle.rao import RaoNozzle
 from physics.regen.bartz import CombustionGas
 from physics.regen.coolant import CoolingChannelGeometry, CoolantInlet, WallMaterial
 from physics.regen.solver import solve_regen
-from physics.util.exceptions import SizingInfeasibleError
+from noyron.kernel.util.exceptions import SizingInfeasibleError
 
 
 # ---------------------------------------------------------------------------

@@ -42,7 +42,7 @@ from physics.regen.coolant import (
     WallMaterial,
 )
 from physics.regen.sizing import ChannelSizingProblem, size_channels
-from physics.heat_exchanger.rocket_regen import solve_rocket_regen as _solve_regen
+from physics.regen.rocket_regen import solve_rocket_regen as _solve_regen
 from physics.structural.bilayer import (
     BilayerWall,
     RibGeometry,
@@ -915,9 +915,9 @@ class Engine:
         from geometry.components.chamber_nozzle import chamber_nozzle_sdf
         from geometry.components.cooling_channels import chamber_with_channels_sdf
         from geometry.components.injector import engine_assembly_sdf, injector_sdf
-        from geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
-        from geometry.mesh.extractor import adaptive_bbox
-        from geometry.mesh.stl_export import write_stl
+        from noyron.kernel.geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
+        from noyron.kernel.geometry.mesh.extractor import adaptive_bbox
+        from noyron.kernel.geometry.mesh.stl_export import write_stl
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)

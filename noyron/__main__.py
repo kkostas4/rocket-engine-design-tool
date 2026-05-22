@@ -437,7 +437,7 @@ def _die(msg: str, verbose: bool = False, exc: BaseException | None = None) -> N
 
 def cmd_design(args: argparse.Namespace) -> None:
     from noyron.engine import Engine
-    from physics.util.exceptions import SizingInfeasibleError
+    from noyron.kernel.util.exceptions import SizingInfeasibleError
 
     verbose = args.verbose
 
@@ -768,7 +768,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
 
 def cmd_render(args: argparse.Namespace) -> None:
     from noyron.engine import Engine, EngineDesign
-    from physics.util.exceptions import SizingInfeasibleError
+    from noyron.kernel.util.exceptions import SizingInfeasibleError
 
     design_json = args.design_dir / "design.json"
     if not design_json.exists():

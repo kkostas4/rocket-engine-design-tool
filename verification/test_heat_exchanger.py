@@ -38,7 +38,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from physics.heat_exchanger.base import (
+from noyron.kernel.heat_exchanger.base import (
     ColdSideModel,
     ColdSideResult,
     FluidProperties,
@@ -46,13 +46,13 @@ from physics.heat_exchanger.base import (
     HotSideModel,
     HotSideState,
 )
-from physics.heat_exchanger.correlations import (
+from noyron.kernel.heat_exchanger.correlations import (
     DittusBoelterModel,
     dittus_boelter,
     haaland_f,
 )
-from physics.heat_exchanger.solver import solve_heat_exchanger
-from physics.heat_exchanger.rocket_regen import solve_rocket_regen
+from noyron.kernel.heat_exchanger.solver import solve_heat_exchanger
+from physics.regen.rocket_regen import solve_rocket_regen
 from physics.regen.bartz import CombustionGas
 from physics.regen.coolant import GRCOP42, CoolantInlet, CoolingChannelGeometry
 from physics.nozzle.rao import RaoNozzle
@@ -443,7 +443,7 @@ class TestSimplePlateFin:
 
     def test_base_importable_without_rocket(self) -> None:
         """
-        physics.heat_exchanger.base is importable in a context where
+        noyron.kernel.heat_exchanger.base is importable in a context where
         physics.regen and physics.nozzle have not yet been imported.
 
         This verifies the 'HotSideModel / ColdSideModel API must be importable
@@ -452,21 +452,24 @@ class TestSimplePlateFin:
         import importlib
         import sys
 
-        # Remove all physics modules from cache
-        to_remove = [k for k in sys.modules if k.startswith("physics")]
+        # Remove all physics/noyron.kernel.heat_exchanger modules from cache
+        to_remove = [
+            k for k in sys.modules
+            if k.startswith("physics") or k.startswith("noyron.kernel.heat_exchanger")
+        ]
         for k in to_remove:
             sys.modules.pop(k, None)
 
         # Import ONLY base — must not trigger rocket imports
-        mod = importlib.import_module("physics.heat_exchanger.base")
+        mod = importlib.import_module("noyron.kernel.heat_exchanger.base")
         assert hasattr(mod, "HotSideModel")
         assert hasattr(mod, "ColdSideModel")
         assert hasattr(mod, "HeatExchangerGeometry")
 
         # Verify physics.nozzle was NOT imported as a side effect
         assert "physics.nozzle" not in sys.modules, (
-            "physics.heat_exchanger.base should not import physics.nozzle"
+            "noyron.kernel.heat_exchanger.base should not import physics.nozzle"
         )
         assert "physics.regen" not in sys.modules, (
-            "physics.heat_exchanger.base should not import physics.regen"
+            "noyron.kernel.heat_exchanger.base should not import physics.regen"
         )

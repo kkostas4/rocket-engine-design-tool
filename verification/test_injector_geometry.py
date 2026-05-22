@@ -203,9 +203,9 @@ def test_assembly_watertight(bilayer_and_geometry, tmp_path):
     """
     import warnings
     from geometry.components.injector import engine_assembly_sdf
-    from geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
-    from geometry.mesh.extractor import adaptive_bbox
-    from geometry.mesh.stl_export import is_watertight
+    from noyron.kernel.geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
+    from noyron.kernel.geometry.mesh.extractor import adaptive_bbox
+    from noyron.kernel.geometry.mesh.stl_export import is_watertight
 
     bl, geom = bilayer_and_geometry
     sdf, profile = engine_assembly_sdf(

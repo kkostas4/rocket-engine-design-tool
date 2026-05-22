@@ -37,9 +37,9 @@ import numpy as np
 import trimesh  # type: ignore[import-untyped]
 
 from geometry.components.cooling_channels import chamber_with_channels_sdf
-from geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
-from geometry.mesh.extractor import adaptive_bbox
-from geometry.mesh.stl_export import is_watertight, write_stl
+from noyron.kernel.geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
+from noyron.kernel.geometry.mesh.extractor import adaptive_bbox
+from noyron.kernel.geometry.mesh.stl_export import is_watertight, write_stl
 from physics.nozzle.rao import RaoNozzle
 from physics.regen.coolant import GRCOP42, CoolantInlet
 from physics.regen.bartz import CombustionGas

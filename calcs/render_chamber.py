@@ -33,8 +33,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 from geometry.components.chamber_nozzle import chamber_nozzle_sdf
-from geometry.mesh.extractor import adaptive_bbox, sdf_to_mesh
-from geometry.mesh.stl_export import is_watertight, write_stl
+from noyron.kernel.geometry.mesh.extractor import adaptive_bbox, sdf_to_mesh
+from noyron.kernel.geometry.mesh.stl_export import is_watertight, write_stl
 from physics.nozzle.rao import RaoNozzle
 from physics.regen.coolant import GRCOP42, CoolantInlet
 from physics.regen.bartz import CombustionGas

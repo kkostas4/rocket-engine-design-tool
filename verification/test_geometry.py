@@ -22,9 +22,9 @@ import warnings
 
 import numpy as np
 
-from geometry.sdf.operations import difference, intersection, union
-from geometry.sdf.primitives import cylinder_z, sphere
-from geometry.sdf.revolution import revolve
+from noyron.kernel.geometry.sdf.operations import difference, intersection, union
+from noyron.kernel.geometry.sdf.primitives import cylinder_z, sphere
+from noyron.kernel.geometry.sdf.revolution import revolve
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +178,7 @@ class TestMarchingCubesSphere:
         Source: Lorensen & Cline (1987) — marching cubes preserves surface
         location to within ~1 voxel.
         """
-        from geometry.mesh.extractor import sdf_to_mesh
+        from noyron.kernel.geometry.mesh.extractor import sdf_to_mesh
 
         r = 0.05
         voxel = 0.005  # 5 mm voxels for speed in CI
@@ -202,7 +202,7 @@ class TestMarchingCubesSphere:
 
     def test_marching_cubes_sphere_connectivity(self) -> None:
         """Extracted sphere mesh has positive vertex and face counts."""
-        from geometry.mesh.extractor import sdf_to_mesh
+        from noyron.kernel.geometry.mesh.extractor import sdf_to_mesh
 
         r = 0.05
         voxel = 0.005
@@ -231,7 +231,7 @@ class TestChamberNozzleVolumeSanity:
             V = pi * integral(r(z)^2, z_min, z_max).
         """
         from geometry.components.chamber_nozzle import chamber_nozzle_sdf
-        from geometry.mesh.extractor import sdf_to_mesh, adaptive_bbox
+        from noyron.kernel.geometry.mesh.extractor import sdf_to_mesh, adaptive_bbox
         from physics.nozzle.rao import RaoNozzle
         from physics.structural.bilayer import (
             BilayerWall, WallLayer, RibGeometry,
@@ -319,8 +319,8 @@ class TestSTLExportRoundtrip:
 
         Source: STL binary format (3D Systems 1989); trimesh I/O.
         """
-        from geometry.mesh.extractor import sdf_to_mesh
-        from geometry.mesh.stl_export import read_stl, write_stl
+        from noyron.kernel.geometry.mesh.extractor import sdf_to_mesh
+        from noyron.kernel.geometry.mesh.stl_export import read_stl, write_stl
 
         f = sphere(radius=0.05)
         bbox = (-0.07, 0.07, -0.07, 0.07, -0.07, 0.07)
@@ -342,8 +342,8 @@ class TestSTLExportRoundtrip:
         """
         With scale_to_mm=True, vertex coordinates are 1000× larger.
         """
-        from geometry.mesh.extractor import sdf_to_mesh
-        from geometry.mesh.stl_export import read_stl, write_stl
+        from noyron.kernel.geometry.mesh.extractor import sdf_to_mesh
+        from noyron.kernel.geometry.mesh.stl_export import read_stl, write_stl
 
         r = 0.05  # metres
         f = sphere(radius=r)

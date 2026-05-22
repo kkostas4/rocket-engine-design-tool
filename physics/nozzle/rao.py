@@ -608,7 +608,7 @@ class RaoNozzle(Component, Renderable, Sizable):
 
         context is accepted but ignored; this component is self-contained.
         """
-        from geometry.sdf.revolution import revolve
+        from noyron.kernel.geometry.sdf.revolution import revolve
         x_arr, r_arr = self.contour(n=500)
         _r_interp = interp1d(
             x_arr, r_arr,

@@ -56,7 +56,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
-from geometry.sdf.revolution import revolve
+from noyron.kernel.geometry.sdf.revolution import revolve
 
 if TYPE_CHECKING:
     from physics.nozzle.rao import RaoNozzle
@@ -206,8 +206,8 @@ def sdf_to_stl(
     -------
     str   Path to the written STL file.
     """
-    from geometry.mesh.extractor import sdf_to_mesh
-    from geometry.mesh.stl_export import write_stl
+    from noyron.kernel.geometry.mesh.extractor import sdf_to_mesh
+    from noyron.kernel.geometry.mesh.stl_export import write_stl
 
     verts, faces = sdf_to_mesh(sdf, bbox, voxel_size=voxel_size)
     write_stl(verts, faces, output, scale_to_mm=scale_to_mm)

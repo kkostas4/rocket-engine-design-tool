@@ -53,7 +53,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
-from physics.util.units import PSI_TO_PA, FT_TO_M
+from noyron.kernel.util.units import PSI_TO_PA, FT_TO_M
 
 if TYPE_CHECKING:
     from noyron.engine import PropellantPair

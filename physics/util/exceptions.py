@@ -1,22 +1,7 @@
-"""
-exceptions.py
-=============
-
-Project-wide typed exceptions.
-
-All sizing failures inherit from SizingInfeasibleError so callers can
-catch by type without importing subsystem-specific exception classes.
-"""
-
-from __future__ import annotations
-
-
-class SizingInfeasibleError(RuntimeError):
-    """
-    Raised when a sizing step cannot find a geometry that satisfies all
-    engineering constraints.
-
-    Inherits from RuntimeError for backward compatibility with code that
-    catches RuntimeError.  Callers that want to handle sizing failures
-    specifically should catch SizingInfeasibleError.
-    """
+import warnings
+warnings.warn(
+    "physics.util.exceptions is deprecated; use noyron.kernel.util.exceptions",
+    DeprecationWarning,
+    stacklevel=2,
+)
+from noyron.kernel.util.exceptions import *  # noqa: F401, F403, E402

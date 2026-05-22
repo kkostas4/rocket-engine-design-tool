@@ -233,7 +233,7 @@ class TestChamberWithChannelsVolume:
         Source: Pappus centroid theorem; NASA SP-8087 §3.1.
         """
         from geometry.components.chamber_nozzle import chamber_nozzle_sdf
-        from geometry.mesh.extractor import adaptive_bbox, sdf_to_mesh
+        from noyron.kernel.geometry.mesh.extractor import adaptive_bbox, sdf_to_mesh
 
         import trimesh  # type: ignore[import-untyped]
 
@@ -343,8 +343,8 @@ class TestChunkedMarchingCubesConsistent:
         This verifies that slab seam welding does not drop large numbers
         of triangles.
         """
-        from geometry.sdf.primitives import sphere
-        from geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
+        from noyron.kernel.geometry.sdf.primitives import sphere
+        from noyron.kernel.geometry.mesh.chunked_extractor import chunked_sdf_to_mesh
 
         r = 0.030
         f = sphere(radius=r)

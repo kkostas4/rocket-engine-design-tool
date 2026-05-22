@@ -49,7 +49,7 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
-from geometry.sdf.operations import difference
+from noyron.kernel.geometry.sdf.operations import difference
 from geometry.components.chamber_nozzle import chamber_nozzle_sdf
 
 if TYPE_CHECKING:

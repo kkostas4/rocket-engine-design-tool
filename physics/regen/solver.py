@@ -69,7 +69,7 @@ def solve_regen(
         x, r, T_wall_gas, T_wall_coolant, T_coolant, P_coolant,
         q_dot, h_g, h_c, dP_total — same as solve_rocket_regen.
     """
-    from physics.heat_exchanger.rocket_regen import solve_rocket_regen
+    from physics.regen.rocket_regen import solve_rocket_regen
     return solve_rocket_regen(
         nozzle=nozzle,
         gas=gas,

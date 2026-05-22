@@ -42,10 +42,10 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
-from geometry.sdf.operations import difference, union
-from geometry.sdf.primitives import cylinder_z
-from geometry.sdf.revolution import revolve
-from geometry.sdf.transforms import rotate_z
+from noyron.kernel.geometry.sdf.operations import difference, union
+from noyron.kernel.geometry.sdf.primitives import cylinder_z
+from noyron.kernel.geometry.sdf.revolution import revolve
+from noyron.kernel.geometry.sdf.transforms import rotate_z
 
 if TYPE_CHECKING:
     from physics.injector.pintle import PintleInjector

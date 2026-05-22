@@ -24,7 +24,7 @@ Usage
 from __future__ import annotations
 
 from physics.injector.pintle import PintleInjector
-from physics.util.units import PSI_TO_PA
+from noyron.kernel.util.units import PSI_TO_PA
 
 # ---------------------------------------------------------------------------
 # Reference engine — held constant across sweep

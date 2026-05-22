@@ -26,7 +26,7 @@ import pytest
 
 from noyron.engine import METHALOX
 from physics.thermochem.cea import cea_combustion, cea_isp_vac
-from physics.util.units import PSI_TO_PA
+from noyron.kernel.util.units import PSI_TO_PA
 
 _PC_REF = 6_894_800.0  # 1000 psia in Pa
 _PC_7   = 7_000_000.0  # 7 MPa
