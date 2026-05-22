@@ -231,10 +231,16 @@ def engine_assembly_sdf(
     """
     from noyron.rp.geometry.cooling_channels import chamber_with_channels_sdf
 
+    # Trim chamber domain by face_thickness so the face-plate zone is left
+    # entirely to f_inj — otherwise the revolve solid buries orifice voids.
+    _z_face = float(nozzle.x_chamber_start)
+    _L_trimmed = float(nozzle.x_inlet) - _z_face - face_thickness
+
     f_main, profile = chamber_with_channels_sdf(
         rao_nozzle=nozzle,
         bilayer=bilayer,
         n_profile_points=n_profile_points,
+        L_chamber=max(_L_trimmed, 0.0),
     )
 
     f_inj, inj_info = injector_sdf(
