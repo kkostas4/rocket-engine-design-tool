@@ -252,8 +252,9 @@ class EngineDesign:
     """
     Complete design solution produced by Engine.design().
 
-    All fields are populated; none are None.  See Engine.design() for the
-    dependency order.
+    Physics fields (requirements…lcf) are always populated.  Manifold
+    fields are Optional; from_dict() defaults them to None for backward
+    compatibility with serialised designs that predate Phase-3.
     """
 
     requirements: EngineRequirements
@@ -265,6 +266,11 @@ class EngineDesign:
     regen_solution: dict
     structural: dict
     lcf: dict
+    # --- Phase-3: geometry manifolds (Optional for backward compat) ------
+    lox_dome: Optional[Any] = None
+    fuel_manifold: Optional[Any] = None
+    coolant_outlet_manifold: Optional[Any] = None
+    coolant_inlet_manifold: Optional[Any] = None
 
     # ------------------------------------------------------------------
     # Serialization
@@ -462,6 +468,11 @@ class EngineDesign:
             regen_solution=regen,
             structural=struct,
             lcf=lcf,
+            # manifolds not serialised — default to None
+            lox_dome=None,
+            fuel_manifold=None,
+            coolant_outlet_manifold=None,
+            coolant_inlet_manifold=None,
         )
 
 
@@ -870,6 +881,22 @@ class Engine:
             ),
         )
 
+        # ------------------------------------------------------------------
+        # 10. Geometry manifolds (no physics — pure geometry, no cache key)
+        # ------------------------------------------------------------------
+        from noyron.rp.geometry.manifolds import (
+            ManifoldConfig,
+            LoxDome,
+            FuelManifold,
+            CoolantOutletManifold,
+            CoolantInletManifold,
+        )
+        _cfg = ManifoldConfig()
+        _lox_dome = LoxDome(nozzle=nozzle, bilayer=bilayer, injector=injector, config=_cfg)
+        _fuel_mfld = FuelManifold(nozzle=nozzle, bilayer=bilayer, injector=injector, config=_cfg)
+        _cool_out = CoolantOutletManifold(nozzle=nozzle, bilayer=bilayer, config=_cfg)
+        _cool_in = CoolantInletManifold(nozzle=nozzle, bilayer=bilayer, config=_cfg)
+
         return EngineDesign(
             requirements=req,
             gas=gas,
@@ -880,6 +907,10 @@ class Engine:
             regen_solution=regen_solution,
             structural=structural,
             lcf=lcf,
+            lox_dome=_lox_dome,
+            fuel_manifold=_fuel_mfld,
+            coolant_outlet_manifold=_cool_out,
+            coolant_inlet_manifold=_cool_in,
         )
 
     def render(
@@ -953,10 +984,43 @@ class Engine:
                     channel_geometry=design.channel_geometry,
                     pintle=design.injector,
                 )
+            elif comp == "full_engine":
+                from noyron.kernel.geometry.sdf.operations import union as _sdf_union
+                sdf_fn, profile = engine_assembly_sdf(
+                    nozzle=design.nozzle,
+                    bilayer=design.bilayer,
+                    channel_geometry=design.channel_geometry,
+                    pintle=design.injector,
+                )
+                z_min = float(profile["z_min"])
+                z_max = float(profile["z_max"])
+                r_outer_max = float(profile["r_outer_max"])
+                for _mfld in (
+                    design.lox_dome,
+                    design.fuel_manifold,
+                    design.coolant_outlet_manifold,
+                    design.coolant_inlet_manifold,
+                ):
+                    if _mfld is not None:
+                        sdf_fn = _sdf_union(sdf_fn, _mfld.to_sdf())
+                        _lo, _hi = _mfld.bbox()
+                        z_min = min(z_min, float(_lo[2]))
+                        z_max = max(z_max, float(_hi[2]))
+                        _r = max(
+                            abs(float(_lo[0])), float(_hi[0]),
+                            abs(float(_lo[1])), float(_hi[1]),
+                        )
+                        r_outer_max = max(r_outer_max, _r)
+                profile = {
+                    "z_min": z_min,
+                    "z_max": z_max,
+                    "r_outer_max": r_outer_max,
+                }
             else:
                 raise NotImplementedError(
                     f"render component '{comp}' not implemented. "
-                    "Supported: 'chamber_nozzle', 'channels', 'injector', 'assembly'."
+                    "Supported: 'chamber_nozzle', 'channels', 'injector', "
+                    "'assembly', 'full_engine'."
                 )
 
             bbox = adaptive_bbox(
