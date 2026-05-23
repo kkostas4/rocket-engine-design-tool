@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
+from noyron.kernel.geometry.sdf.operations import difference
 from noyron.kernel.geometry.sdf.revolution import revolve
 
 if TYPE_CHECKING:
@@ -156,7 +157,7 @@ def chamber_nozzle_sdf(
     r_outer_max = float(r_outer_all.max())
 
     # ------------------------------------------------------------------
-    # 2.  Build vectorised interpolant for the outer profile
+    # 2.  Build vectorised interpolants for outer and inner profiles
     # ------------------------------------------------------------------
     _r_outer_interp = interp1d(
         z_all, r_outer_all,
@@ -164,14 +165,26 @@ def chamber_nozzle_sdf(
         bounds_error=False,
         fill_value=(float(r_outer_all[0]), float(r_outer_all[-1])),
     )
+    _r_inner_interp = interp1d(
+        z_all, r_inner_all,
+        kind="linear",
+        bounds_error=False,
+        fill_value=(float(r_inner_all[0]), float(r_inner_all[-1])),
+    )
 
     def r_of_z(z_arr: np.ndarray) -> np.ndarray:
         return _r_outer_interp(z_arr).astype(np.float32)
 
+    def r_inner_of_z(z_arr: np.ndarray) -> np.ndarray:
+        return _r_inner_interp(z_arr).astype(np.float32)
+
     # ------------------------------------------------------------------
-    # 3.  Return the revolution SDF and profile data
+    # 3.  Hollow jacket: outer solid minus gas-path bore
     # ------------------------------------------------------------------
-    sdf = revolve(r_of_z, z_min, z_max)
+    # difference(outer, gas_path) = max(f_outer, -f_gas_path)
+    # → r < r_inner: void (gas path); r_inner < r < r_outer: solid (metal)
+    sdf = difference(revolve(r_of_z, z_min, z_max),
+                     revolve(r_inner_of_z, z_min, z_max))
 
     profile = {
         "z_ax": z_all,

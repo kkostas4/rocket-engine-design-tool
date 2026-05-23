@@ -282,10 +282,12 @@ class TestChamberNozzleVolumeSanity:
             L_chamber=L_ch,
         )
 
-        # Analytical volume = pi * integral(r_outer^2, z_min, z_max)
+        # Analytical volume = pi * integral(r_outer^2 - r_inner^2, z_min, z_max)
+        # chamber_nozzle_sdf returns a hollow jacket, not a solid disc.
         z_ax = profile["z_ax"]
         r_out = profile["r_outer"]
-        V_analytical = math.pi * float(np.trapezoid(r_out**2, z_ax))
+        r_in  = profile["r_inner"]
+        V_analytical = math.pi * float(np.trapezoid(r_out**2 - r_in**2, z_ax))
 
         # Extract mesh at coarse resolution for speed
         voxel = 1.0e-3  # 1 mm
