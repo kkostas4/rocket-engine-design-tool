@@ -56,8 +56,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
-from noyron.kernel.geometry.sdf.operations import difference
-from noyron.kernel.geometry.sdf.revolution import revolve
+from noyron.kernel.geometry.sdf.revolution import hollow_revolve, revolve
 
 if TYPE_CHECKING:
     from noyron.rp.nozzle.rao import RaoNozzle
@@ -181,10 +180,9 @@ def chamber_nozzle_sdf(
     # ------------------------------------------------------------------
     # 3.  Hollow jacket: outer solid minus gas-path bore
     # ------------------------------------------------------------------
-    # difference(outer, gas_path) = max(f_outer, -f_gas_path)
+    # hollow_revolve = max(f_outer, -f_inner):
     # → r < r_inner: void (gas path); r_inner < r < r_outer: solid (metal)
-    sdf = difference(revolve(r_of_z, z_min, z_max),
-                     revolve(r_inner_of_z, z_min, z_max))
+    sdf = hollow_revolve(r_of_z, r_inner_of_z, z_min, z_max)
 
     profile = {
         "z_ax": z_all,

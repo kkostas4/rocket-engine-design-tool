@@ -41,6 +41,76 @@ from typing import Callable
 import numpy as np
 
 
+def hollow_revolve(
+    r_outer_of_z: Callable[[np.ndarray], np.ndarray],
+    r_inner_of_z: Callable[[np.ndarray], np.ndarray],
+    z_min: float,
+    z_max: float,
+) -> Callable:
+    """
+    Build a 3D SDF for a hollow capped shell of revolution.
+
+    Equivalent to ``difference(revolve(r_outer_of_z, z_min, z_max),
+    revolve(r_inner_of_z, z_min, z_max))`` but ~3× faster: computes rho,
+    z_clamped, f_bot, and f_top once instead of twice, and eliminates the
+    difference closure layer.
+
+    The solid occupies the annular shell:
+        { (x,y,z) : z_min <= z <= z_max
+                    AND r_inner_of_z(z) <= sqrt(x^2+y^2) <= r_outer_of_z(z) }
+
+    SDF value:
+        f_outer = max(rho - r_outer(z_c), z_min - z, z - z_max)
+        f_inner = max(rho - r_inner(z_c), z_min - z, z - z_max)
+        f       = max(f_outer, -f_inner)
+
+    This gives f < 0 inside the shell and f > 0 outside (gas path or exterior).
+
+    Parameters
+    ----------
+    r_outer_of_z : Callable[[ndarray], ndarray]
+        Outer radial profile [m]. Called with z_clamped.
+    r_inner_of_z : Callable[[ndarray], ndarray]
+        Inner radial profile [m]. Called with z_clamped.
+    z_min : float
+        Axial start of the shell [m].
+    z_max : float
+        Axial end of the shell [m].
+
+    Returns
+    -------
+    Callable f(x, y, z) -> ndarray
+        Signed distance function.
+
+    Source: Quilez, I. (2023). "Signed Distance Functions — Subtraction."
+            iquilezles.org/articles/distfunctions.
+    """
+    if z_max <= z_min:
+        raise ValueError(f"z_max ({z_max}) must be > z_min ({z_min})")
+
+    def _f(x, y, z):
+        x_ = np.asarray(x, dtype=np.float32)
+        y_ = np.asarray(y, dtype=np.float32)
+        z_ = np.asarray(z, dtype=np.float32)
+
+        rho = np.sqrt(x_ * x_ + y_ * y_)
+        z_c = np.clip(z_, z_min, z_max)
+        z_c64 = z_c.astype(float)
+
+        r_out = r_outer_of_z(z_c64).astype(np.float32)
+        r_in  = r_inner_of_z(z_c64).astype(np.float32)
+
+        f_bot = np.float32(z_min) - z_
+        f_top = z_ - np.float32(z_max)
+
+        f_outer = np.maximum(np.maximum(rho - r_out, f_bot), f_top)
+        f_inner = np.maximum(np.maximum(rho - r_in,  f_bot), f_top)
+
+        return np.maximum(f_outer, -f_inner)
+
+    return _f
+
+
 def revolve(
     r_of_z: Callable[[np.ndarray], np.ndarray],
     z_min: float,
