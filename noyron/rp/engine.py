@@ -693,6 +693,16 @@ class Engine:
           7. bilayer        WallLayer + jacket auto-sizing
           8. structural     bilayer_stress_profile() axial stress
           9. lcf            lcf_check() Manson-Coffin at worst station
+
+        Performance note — no SDF evaluation occurs during design()
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        All geometry in design() is analytical (r_of_z interpolants, closed-form
+        radii, stress integrals).  The SDF closures built by ``hollow_revolve``,
+        ``BilayerWall.to_sdf()``, and ``CoolingChannelGeometry.to_sdf()`` are
+        constructed lazily and only evaluated during ``render()``.  A slow
+        design() call is therefore entirely due to the regen solver (step 5-6,
+        typically 35-45 s for 384 channel candidates) — not SDF overhead.
+        Confirmed by cProfile: 0 SDF calls in a full design() run.
         """
         req = self._req
         prop = req.propellant
