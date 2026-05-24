@@ -815,6 +815,7 @@ class Engine:
                 min_wall_thickness=am.min_wall_thickness,
                 max_aspect_ratio=am.max_internal_aspect_ratio,
                 min_channel_width=am.min_channel_width,
+                min_channel_height=am.min_channel_height,
                 t_land_min=am.min_feature_size,
                 n_stations_opt=60,
             )

@@ -124,6 +124,12 @@ class ChannelSizingProblem:
         Note: the sizer fixes w = min_channel_width everywhere; maximising
         velocity for a given h_c budget is achieved by keeping w at its
         minimum.
+    min_channel_height : float
+        Minimum channel height h (AM constraint) [m].  Grid points below this
+        value are skipped in the sweep so the selected geometry is always
+        printable.  Default 0.0 (no constraint).  Must be set from
+        AMRules.min_channel_height when running with additive-manufacturing
+        rules.
     t_land_min : float
         Minimum land (rib) thickness [m].
     n_stations_opt : int
@@ -141,6 +147,7 @@ class ChannelSizingProblem:
     min_wall_thickness: float = 0.5e-3
     max_aspect_ratio: float = 8.0
     min_channel_width: float = 0.6e-3
+    min_channel_height: float = 0.0
     t_land_min: float = 0.3e-3
     n_stations_opt: int = 60
 
@@ -320,11 +327,15 @@ def size_channels(problem: ChannelSizingProblem) -> CoolingChannelGeometry:
 
         for h01_mm in _H01_GRID_MM:
             h01 = h01_mm * 1e-3
+            if h01 < problem.min_channel_height - 1.0e-9:
+                continue  # AM height constraint
             if h01 / w > problem.max_aspect_ratio + 1.0e-6:
                 continue  # AR constraint
 
             for h2_mm in _H2_GRID_MM:
                 h2 = h2_mm * 1e-3
+                if h2 < problem.min_channel_height - 1.0e-9:
+                    continue  # AM height constraint
                 if h2 / w > problem.max_aspect_ratio + 1.0e-6:
                     continue
 
@@ -355,10 +366,14 @@ def size_channels(problem: ChannelSizingProblem) -> CoolingChannelGeometry:
             m_best_t = None
             for h01_mm in _H01_GRID_MM:
                 h01 = h01_mm * 1e-3
+                if h01 < problem.min_channel_height - 1.0e-9:
+                    continue
                 if h01 / w > problem.max_aspect_ratio + 1.0e-6:
                     continue
                 for h2_mm in _H2_GRID_MM:
                     h2 = h2_mm * 1e-3
+                    if h2 < problem.min_channel_height - 1.0e-9:
+                        continue
                     if h2 / w > problem.max_aspect_ratio + 1.0e-6:
                         continue
                     m = _evaluate(n_ch, w, h01, h2, problem, x1, x2)

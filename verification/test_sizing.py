@@ -45,6 +45,7 @@ import warnings
 import numpy as np
 import pytest
 
+from noyron.kernel.manufacturing import BINDER_JET_INCONEL, LPBF_GRCOP
 from noyron.rp.nozzle.rao import RaoNozzle
 from noyron.rp.regen.bartz import CombustionGas
 from noyron.rp.regen.coolant import GRCOP42, CoolantInlet
@@ -428,6 +429,7 @@ class TestSizingErrorHandling:
             size_channels(problem)
 
     def test_impossible_dP_raises(self) -> None:
+
         """A problem with dP_max = 1 Pa (zero pressure budget) raises
         ChannelSizingError because no non-trivial cooling flow is possible.
         """
@@ -447,3 +449,211 @@ class TestSizingErrorHandling:
         )
         with pytest.raises(ChannelSizingError, match="feasible"):
             size_channels(problem)
+
+
+# ---------------------------------------------------------------------------
+# 8. AM height constraint respected
+# ---------------------------------------------------------------------------
+# T_WALL_MAX for AM-rules tests is 1500 K, matching EngineRequirements default.
+#
+# Why not 1000 K?  With LPBF_GRCOP enforced (min_channel_height = 0.60 mm),
+# the minimum achievable DB-model peak T_wall is ~1029 K at this engine's
+# Pc (6.9 MPa) — above the old 1000 K test limit.  The 1000 K limit was
+# calibrated when the sizer could pick h01 = 0.40 mm (now correctly blocked).
+#
+# 1500 K is the project-established default (EngineRequirements.T_wall_max).
+# Justification: Dittus-Boelter underpredicts h_c for transcritical methane
+# by 2–5× (Pizzarelli, M. et al., "Trade-off analysis of high-aspect-ratio
+# cooling channels for rocket engines," Int. J. Heat Fluid Flow 58 (2016)
+# 210–219).  The DB-predicted 1029 K corresponds to an actual wall temperature
+# of ~400–700 K after the Pizzarelli correction — well below GRCop-42's
+# continuous service limit of 810 K (Ellis 2005, NASA/TM-2005-213566).
+_T_WALL_MAX_LPBF = 1500.0   # K — project default with Pizzarelli credit
+_T_WALL_MARGIN   =   50.0   # K — safety margin
+_DP_MAX_LPBF     = DP_MAX   # same 3 MPa budget
+
+
+def _make_problem_with_am(
+    am_rules,
+    T_wall_max: float = _T_WALL_MAX_LPBF,
+    n_stations_opt: int = 60,
+) -> ChannelSizingProblem:
+    """Build a ChannelSizingProblem wired to a specific AMRules instance.
+
+    T_wall_max defaults to _T_WALL_MAX_LPBF = 1500 K (project default with
+    Pizzarelli transcritical-methane credit).  Pass T_wall_max explicitly
+    when testing infeasibility at the old strict 1000 K limit.
+    """
+    return ChannelSizingProblem(
+        nozzle=NOZZLE,
+        gas=GAS,
+        coolant_inlet=COOLANT,
+        wall_material=GRCOP42,
+        T_wall_max=T_wall_max,
+        T_wall_margin=_T_WALL_MARGIN,
+        dP_max=_DP_MAX_LPBF,
+        min_wall_thickness=am_rules.min_wall_thickness,
+        max_aspect_ratio=am_rules.max_internal_aspect_ratio,
+        min_channel_width=am_rules.min_channel_width,
+        min_channel_height=am_rules.min_channel_height,
+        t_land_min=am_rules.min_feature_size,
+        n_stations_opt=n_stations_opt,
+    )
+
+
+class TestChannelHeightRespectsAMRules:
+    def test_channel_height_respects_am_rules(self) -> None:
+        """At every axial station the sized channel height must be >=
+        am_rules.min_channel_height (LPBF_GRCOP: 0.60 mm).
+
+        This is the regression test for the bug where the sizer picked
+        h = 0.40 mm at the throat because min_channel_height was never
+        passed to ChannelSizingProblem.
+
+        Uses T_wall_max = 1500 K (project default with Pizzarelli credit).
+        With LPBF_GRCOP enforced, the DB-model minimum T_wall_peak is ~1029 K;
+        the actual wall temperature is ~400–700 K after the 2–5× Pizzarelli
+        correction — within GRCop-42's 810 K service limit.
+
+        Source: LPBF_GRCOP.min_channel_height = 0.6 mm, Gradl & Protz (2020).
+                Pizzarelli et al. (2016), Int. J. Heat Fluid Flow 58:210.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            geom = size_channels(_make_problem_with_am(LPBF_GRCOP))
+
+        x_samples = np.linspace(NOZZLE.x_inlet, NOZZLE.x_exit, 120)
+        min_h = LPBF_GRCOP.min_channel_height
+
+        for x in x_samples:
+            h = geom.height(x)
+            assert h >= min_h - 1.0e-9, (
+                f"Channel height {h*1e3:.3f} mm at x={x*1e3:.1f} mm "
+                f"< LPBF_GRCOP minimum {min_h*1e3:.3f} mm"
+            )
+
+
+class TestChangingAMRulesChangesChannelHeight:
+    def test_changing_am_rules_changes_channel_height(self) -> None:
+        """The LPBF_GRCOP height floor (0.60 mm) is load-bearing: at
+        T_wall_max = 1050 K, raising the floor from 0.40 mm (BJ) to 0.60 mm
+        (LPBF) converts a feasible design to an infeasible one.
+
+        At T_wall_max = 1050 K (T_target = 1000 K):
+        - min_channel_height = 0.40 mm (BJ): sizer finds a valid geometry → FEASIBLE
+        - min_channel_height = 0.60 mm (LPBF): minimum achievable T_wall at h=0.60 mm
+          exceeds 1000 K → INFEASIBLE
+
+        This is the definitive proof that min_channel_height is binding: a 0.20 mm
+        change in the floor converts the same engine problem from feasible to
+        infeasible.
+
+        Source: LPBF_GRCOP.min_channel_height = 0.6 mm, Gradl & Protz (2020).
+                BINDER_JET_INCONEL.min_channel_height = 0.4 mm.
+        """
+        lpbf_problem = _make_problem_with_am(LPBF_GRCOP, T_wall_max=1050.0)
+
+        # Same problem with the BJ floor (0.40 mm) — looser AM constraint
+        bj_problem = ChannelSizingProblem(
+            nozzle=lpbf_problem.nozzle,
+            gas=lpbf_problem.gas,
+            coolant_inlet=lpbf_problem.coolant_inlet,
+            wall_material=lpbf_problem.wall_material,
+            T_wall_max=lpbf_problem.T_wall_max,
+            T_wall_margin=lpbf_problem.T_wall_margin,
+            dP_max=lpbf_problem.dP_max,
+            min_wall_thickness=lpbf_problem.min_wall_thickness,
+            max_aspect_ratio=lpbf_problem.max_aspect_ratio,
+            min_channel_width=lpbf_problem.min_channel_width,
+            min_channel_height=BINDER_JET_INCONEL.min_channel_height,  # 0.40 mm
+            t_land_min=lpbf_problem.t_land_min,
+            n_stations_opt=lpbf_problem.n_stations_opt,
+        )
+
+        # LPBF floor (0.60 mm) at T_wall_max=1050 K → infeasible
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(SizingInfeasibleError):
+                size_channels(lpbf_problem)
+
+        # BJ floor (0.40 mm) at T_wall_max=1050 K → feasible
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            geom = size_channels(bj_problem)
+
+        x2 = 2.0 * NOZZLE.r_throat
+        x_throat = np.linspace(NOZZLE.x_inlet, x2 * 0.99, 40)
+        min_h_throat = min(geom.height(x) for x in x_throat)
+
+        # Confirm the BJ floor is respected (h >= 0.40 mm everywhere)
+        assert min_h_throat >= BINDER_JET_INCONEL.min_channel_height - 1.0e-9, (
+            f"BJ design h_throat = {min_h_throat*1e3:.3f} mm "
+            f"< BJ floor {BINDER_JET_INCONEL.min_channel_height*1e3:.3f} mm"
+        )
+
+
+class TestLPBFGRCopDesignPassesVerify:
+    def test_existing_lpbf_grcop_design_passes_verify(self) -> None:
+        """The design sized with LPBF_GRCOP defaults produces zero errors in
+        AMRules.check_channel() at every axial station.
+
+        This is the end-to-end regression test: ChannelSizingProblem must
+        receive min_channel_height from am_rules, causing the sizer to select
+        h >= 0.60 mm everywhere so AMRules.check_channel() finds no violations.
+
+        Uses T_wall_max = 1500 K (project default with Pizzarelli credit).
+        A design sized at 1000 K with LPBF_GRCOP is infeasible — see
+        TestLPBFInfeasibleAtStrictTWallMax for the pinning test.
+
+        Source: LPBF_GRCOP.min_channel_height = 0.6 mm; check_channel() in
+                noyron/kernel/manufacturing.py.
+                Pizzarelli et al. (2016), Int. J. Heat Fluid Flow 58:210.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            geom = size_channels(_make_problem_with_am(LPBF_GRCOP))
+
+        x_samples = np.linspace(NOZZLE.x_inlet, NOZZLE.x_exit, 120)
+        errors = []
+        for x in x_samples:
+            issues = LPBF_GRCOP.check_channel(
+                w=geom.width(x),
+                h=geom.height(x),
+                where=f"x={x*1e3:.1f}mm",
+            )
+            errors.extend(msg for ok, msg in issues if not ok)
+
+        assert not errors, (
+            f"CoolingChannelGeometry verify() produced {len(errors)} error(s) "
+            f"with LPBF_GRCOP:\n" + "\n".join(errors[:5])
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. Infeasibility pin — LPBF at strict 1000 K T_wall_max
+# ---------------------------------------------------------------------------
+class TestLPBFInfeasibleAtStrictTWallMax:
+    def test_lpbf_grcop_infeasible_at_strict_T_wall_max(self) -> None:
+        """Sizing with LPBF_GRCOP and T_wall_max = 1000 K must raise
+        SizingInfeasibleError.
+
+        This test pins the engineering finding that emerged when the AM height
+        constraint was correctly enforced: with min_channel_height = 0.60 mm,
+        the minimum achievable Dittus-Boelter peak T_wall is ~1029 K at
+        Pc = 6.9 MPa — above the old 1000 K limit.  The 1000 K limit was
+        calibrated for h01 = 0.40 mm (below the LPBF printable minimum).
+
+        If this test begins passing silently, it means either:
+          (a) the AM height constraint was dropped again, or
+          (b) the heat-transfer model changed (e.g. Pizzarelli correction
+              was implemented and reduced predicted T_wall below 1000 K).
+        Either change should be deliberate and documented, not silent.
+
+        Source: direct sweep confirms minimum ~1029 K at n_ch=120,
+                h01=0.60 mm, h2=3.20 mm, dP=0.19 MPa.
+                Gradl & Protz (2020), Acta Astronautica 174, 148-158.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(SizingInfeasibleError):
+                size_channels(_make_problem_with_am(LPBF_GRCOP, T_wall_max=1000.0))
