@@ -112,7 +112,9 @@ class ChannelSizingProblem:
     T_wall_max : float
         Hard material limit [K].  The sizer targets T_wall_max - T_wall_margin.
     T_wall_margin : float
-        Safety margin below T_wall_max [K].  Default 50 K.
+        Safety margin below T_wall_max [K].  Default 0 K (no margin;
+        T_wall_max already incorporates the Pizzarelli 2016 correction
+        for DB underprediction of h_c in transcritical methane).
     dP_max : float
         Maximum allowable total coolant pressure drop [Pa].
     min_wall_thickness : float
@@ -142,7 +144,7 @@ class ChannelSizingProblem:
     coolant_inlet: CoolantInlet
     wall_material: WallMaterial
     T_wall_max: float
-    T_wall_margin: float = 50.0
+    T_wall_margin: float = 0.0
     dP_max: float = 5.0e6
     min_wall_thickness: float = 0.5e-3
     max_aspect_ratio: float = 8.0

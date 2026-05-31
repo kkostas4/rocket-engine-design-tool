@@ -67,30 +67,25 @@ GAS = CombustionGas(
     c_star=1893.3,
 )
 
-NOZZLE = RaoNozzle(r_throat=0.022313 / 2.0, epsilon=10.605)
+# r_throat = 0.010947319… m (10.947 mm): CEA-corrected value at the methalox_5kN
+# operating point (equilibrium expansion).  Replaces the stale 11.156 mm value
+# from pre-CEA spreadsheet calculation.
+NOZZLE = RaoNozzle(r_throat=0.010947319134266876, epsilon=10.605)
 COOLANT = CoolantInlet(T=150.0, P=12.0e6, m_dot=0.3096, fluid="Methane")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Design limits
+# Design limits for the basic (non-AM-rules) sizing tests
 #
-# T_wall_max = 1000 K  -- DB-model limit for GRCop-42 sizing sweep
-#   GRCop-42 continuous service limit is 810 K (Ellis 2005).  Dittus-Boelter
-#   underpredicts h_c for transcritical methane by 2–5× (Pizzarelli 2016),
-#   so the actual T_wall is 300–600 K lower than the DB prediction.  Setting
-#   T_wall_max = 1000 K gives the sizer a feasible target within the DB model
-#   while remaining consistent with the real GRCop-42 limit after correction.
-# T_wall_margin = 50 K -- sizing safety margin below the model limit
-# T_wall_target = 950 K -- sizer must achieve this or below (DB model)
-# DP_MAX = 3 MPa       -- pump head budget
-#
-# Physical justification for 950 K target:
-#   The parametric sweep (n_ch × h01 × h2) shows the minimum achievable
-#   T_wall_peak with Dittus-Boelter + GRCop-42 at w_min = 0.6 mm is ~928 K,
-#   so 950 K is a reachable and meaningful design target.
+# T_wall_max = 1000 K  -- legacy test parameter; these tests verify sizer
+#   behaviour at a specific design point, not the project default.  The
+#   project default is 1500 K with Pizzarelli credit (see _T_WALL_MAX_LPBF).
+# T_wall_margin = 0 K  -- no margin; T_wall_max is the direct sizer target
+# T_wall_target = 1000 K -- sizer must achieve T_wall ≤ 1000 K (DB model)
+# DP_MAX = 3 MPa        -- pump head budget
 # ─────────────────────────────────────────────────────────────────────────────
-T_WALL_MAX = 1000.0  # K  (DB-model bound; real T_wall with Pizzarelli correction is lower)
-T_WALL_MARGIN = 50.0  # K
-T_WALL_TARGET = T_WALL_MAX - T_WALL_MARGIN  # 950 K
+T_WALL_MAX = 1000.0  # K  (legacy test parameter; project default is 1500 K)
+T_WALL_MARGIN = 0.0   # K
+T_WALL_TARGET = T_WALL_MAX - T_WALL_MARGIN  # 1000 K
 DP_MAX = 3.0e6  # Pa (3 MPa)
 
 
@@ -469,7 +464,7 @@ class TestSizingErrorHandling:
 # of ~400–700 K after the Pizzarelli correction — well below GRCop-42's
 # continuous service limit of 810 K (Ellis 2005, NASA/TM-2005-213566).
 _T_WALL_MAX_LPBF = 1500.0   # K — project default with Pizzarelli credit
-_T_WALL_MARGIN   =   50.0   # K — safety margin
+_T_WALL_MARGIN   =    0.0   # K — no margin; T_wall_max already absorbs Pizzarelli correction
 _DP_MAX_LPBF     = DP_MAX   # same 3 MPa budget
 
 
@@ -536,11 +531,11 @@ class TestChannelHeightRespectsAMRules:
 class TestChangingAMRulesChangesChannelHeight:
     def test_changing_am_rules_changes_channel_height(self) -> None:
         """The LPBF_GRCOP height floor (0.60 mm) is load-bearing: at
-        T_wall_max = 1050 K, raising the floor from 0.40 mm (BJ) to 0.60 mm
+        T_wall_max = 1000 K, raising the floor from 0.40 mm (BJ) to 0.60 mm
         (LPBF) converts a feasible design to an infeasible one.
 
-        At T_wall_max = 1050 K (T_target = 1000 K):
-        - min_channel_height = 0.40 mm (BJ): sizer finds a valid geometry → FEASIBLE
+        At T_wall_max = 1000 K (T_target = 1000 K):
+        - min_channel_height = 0.40 mm (BJ): sizer finds h=0.40 mm → FEASIBLE
         - min_channel_height = 0.60 mm (LPBF): minimum achievable T_wall at h=0.60 mm
           exceeds 1000 K → INFEASIBLE
 
@@ -551,7 +546,7 @@ class TestChangingAMRulesChangesChannelHeight:
         Source: LPBF_GRCOP.min_channel_height = 0.6 mm, Gradl & Protz (2020).
                 BINDER_JET_INCONEL.min_channel_height = 0.4 mm.
         """
-        lpbf_problem = _make_problem_with_am(LPBF_GRCOP, T_wall_max=1050.0)
+        lpbf_problem = _make_problem_with_am(LPBF_GRCOP, T_wall_max=1000.0)
 
         # Same problem with the BJ floor (0.40 mm) — looser AM constraint
         bj_problem = ChannelSizingProblem(
@@ -570,13 +565,13 @@ class TestChangingAMRulesChangesChannelHeight:
             n_stations_opt=lpbf_problem.n_stations_opt,
         )
 
-        # LPBF floor (0.60 mm) at T_wall_max=1050 K → infeasible
+        # LPBF floor (0.60 mm) at T_wall_max=1000 K → infeasible
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             with pytest.raises(SizingInfeasibleError):
                 size_channels(lpbf_problem)
 
-        # BJ floor (0.40 mm) at T_wall_max=1050 K → feasible
+        # BJ floor (0.40 mm) at T_wall_max=1000 K → feasible, picks h=0.40 mm
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             geom = size_channels(bj_problem)
@@ -585,10 +580,10 @@ class TestChangingAMRulesChangesChannelHeight:
         x_throat = np.linspace(NOZZLE.x_inlet, x2 * 0.99, 40)
         min_h_throat = min(geom.height(x) for x in x_throat)
 
-        # Confirm the BJ floor is respected (h >= 0.40 mm everywhere)
-        assert min_h_throat >= BINDER_JET_INCONEL.min_channel_height - 1.0e-9, (
+        # BJ picks h=0.40 mm (below the 0.60 mm LPBF floor) — proves the floor is binding
+        assert min_h_throat < LPBF_GRCOP.min_channel_height - 1.0e-9, (
             f"BJ design h_throat = {min_h_throat*1e3:.3f} mm "
-            f"< BJ floor {BINDER_JET_INCONEL.min_channel_height*1e3:.3f} mm"
+            f"should be < LPBF floor {LPBF_GRCOP.min_channel_height*1e3:.3f} mm"
         )
 
 

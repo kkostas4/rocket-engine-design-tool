@@ -37,8 +37,8 @@ size against this engine unless explicitly varying a parameter for trade study.
 ### Geometry
 | Feature | Value (m) | Value (mm) |
 |---|---|---|
-| Throat area | 3.910e-4 m² | — |
-| Throat diameter | 0.022313 | 22.313 |
+| Throat area | 3.766e-4 m² | — |
+| Throat diameter | 0.021895 | 21.895 |
 | Exit area | 4.147e-3 m² | — |
 | Exit diameter | 0.072662 | 72.662 |
 | Ac/At | 4.0 | — |
@@ -46,6 +46,12 @@ size against this engine unless explicitly varying a parameter for trade study.
 | Chamber diameter | 0.044625 | 44.625 |
 | L* (characteristic length) | 0.500 | 500 |
 | Chamber length | 0.125 | 125 |
+
+> **Note on throat geometry:** The throat diameter above (21.895 mm, r_throat = 10.947 mm)
+> is the CEA-corrected value from equilibrium expansion at the methalox_5kN operating
+> point.  Earlier versions of this document listed 22.313 mm (r = 11.156 mm) from a
+> pre-CEA spreadsheet calculation; that value is stale.  All test fixtures and the
+> engine model use 10.947 mm.
 
 ### Injector — Fuel (LCH4)
 | Parameter | SI | US |

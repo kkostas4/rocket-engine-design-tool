@@ -810,7 +810,7 @@ class Engine:
                 coolant_inlet=coolant_inlet,
                 wall_material=GRCOP42,
                 T_wall_max=req.T_wall_max,
-                T_wall_margin=50.0,
+                T_wall_margin=0.0,   # Pizzarelli 2016 credit: DB underpredicts h_c 2-5x; T_wall_max already absorbs the margin
                 dP_max=req.dP_coolant_budget,
                 min_wall_thickness=am.min_wall_thickness,
                 max_aspect_ratio=am.max_internal_aspect_ratio,

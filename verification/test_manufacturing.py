@@ -173,7 +173,8 @@ def test_existing_scalar_results_unchanged():
     from noyron.rp.engine import Engine, EngineRequirements, METHALOX
 
     # Reference values from CLAUDE.md
-    R_THROAT_REF = 0.022313 / 2   # m — 22.313 mm throat diameter
+    # CEA-corrected value at the methalox_5kN operating point (replaces stale 11.156 mm)
+    R_THROAT_REF = 0.010947319134266876   # m — 10.947 mm throat radius
 
     req = EngineRequirements(
         thrust=4448.22,

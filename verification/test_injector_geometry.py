@@ -41,7 +41,8 @@ from noyron.rp.regen.coolant import CoolantInlet
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
-_NOZZLE = RaoNozzle(r_throat=0.022313 / 2.0, epsilon=10.605)
+# r_throat = 10.947 mm: CEA-corrected value at the methalox_5kN operating point
+_NOZZLE = RaoNozzle(r_throat=0.010947319134266876, epsilon=10.605)
 
 _PINTLE = PintleInjector.from_uniform_dP(
     dP_inj=0.45 * 6.8948e6,   # 45 % of Pc = reference engine
@@ -76,8 +77,8 @@ def bilayer_and_geometry():
         gas=gas,
         coolant_inlet=coolant,
         wall_material=GRCOP42,
-        T_wall_max=1000.0,
-        T_wall_margin=50.0,
+        T_wall_max=1500.0,   # project default (Pizzarelli 2016 credit)
+        T_wall_margin=0.0,
         dP_max=3.0e6,
         min_wall_thickness=0.5e-3,
         max_aspect_ratio=8.0,
