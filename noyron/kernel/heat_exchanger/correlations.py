@@ -38,7 +38,7 @@ from __future__ import annotations
 import math
 import warnings
 
-from physics.heat_exchanger.base import (
+from noyron.kernel.heat_exchanger.base import (
     ColdSideModel,
     ColdSideResult,
     FluidProperties,

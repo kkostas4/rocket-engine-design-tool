@@ -46,13 +46,13 @@ from typing import Any
 
 import numpy as np
 
-from physics.heat_exchanger.base import (
+from noyron.kernel.heat_exchanger.base import (
     ColdSideModel,
     FluidProperties,
     HeatExchangerGeometry,
     HotSideModel,
 )
-from physics.heat_exchanger.correlations import haaland_f
+from noyron.kernel.heat_exchanger.correlations import haaland_f
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:

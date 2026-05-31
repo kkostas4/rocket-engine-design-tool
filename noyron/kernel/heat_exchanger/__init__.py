@@ -27,7 +27,7 @@ Rocket-regen adapter:
     BartzHotSide, RegenChannelGeometry, solve_rocket_regen
 """
 
-from physics.heat_exchanger.base import (
+from noyron.kernel.heat_exchanger.base import (
     ColdSideResult,
     FluidProperties,
     HeatExchangerGeometry,
@@ -35,25 +35,23 @@ from physics.heat_exchanger.base import (
     HotSideState,
     ColdSideModel,
 )
-from physics.heat_exchanger.correlations import (
+from noyron.kernel.heat_exchanger.correlations import (
     DittusBoelterModel,
     dittus_boelter,
     gnielinski,
     haaland_f,
     sieder_tate,
 )
-from physics.heat_exchanger.solver import solve_heat_exchanger
+from noyron.kernel.heat_exchanger.solver import solve_heat_exchanger
 
-# Rocket-regen names are loaded lazily so that importing this package (or
-# physics.heat_exchanger.base) does NOT trigger physics.nozzle/physics.regen
-# as a side effect.  Direct submodule imports still work:
-#   from physics.heat_exchanger.rocket_regen import solve_rocket_regen
+# Rocket-regen names are loaded lazily so that importing this package does NOT
+# trigger physics.nozzle/physics.regen as a side effect.
 _ROCKET_REGEN_NAMES = frozenset({"BartzHotSide", "RegenChannelGeometry", "solve_rocket_regen"})
 
 
 def __getattr__(name: str):
     if name in _ROCKET_REGEN_NAMES:
-        from physics.heat_exchanger import rocket_regen as _rr
+        from physics.regen import rocket_regen as _rr
         return getattr(_rr, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
