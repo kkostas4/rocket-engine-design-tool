@@ -42,12 +42,13 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
-from noyron.kernel.geometry.sdf.operations import difference, union
+from noyron.kernel.geometry.sdf.operations import difference, smooth_union, union
 from noyron.kernel.geometry.sdf.primitives import cylinder_z
 from noyron.kernel.geometry.sdf.revolution import revolve
 from noyron.kernel.geometry.sdf.transforms import rotate_z
 
 if TYPE_CHECKING:
+    from noyron.rp.geometry.blend_config import BlendConfig
     from noyron.rp.injector.pintle import PintleInjector
     from noyron.rp.nozzle.rao import RaoNozzle
     from noyron.rp.structural.bilayer import BilayerWall
@@ -64,6 +65,7 @@ def injector_sdf(
     bilayer: "BilayerWall | None" = None,
     face_thickness: float = 8e-3,
     pintle_protrusion: float | None = None,
+    blend_config: "BlendConfig | None" = None,
 ) -> tuple[Callable, dict]:
     """
     Build the 3D SDF of the injector face plate + pintle post.
@@ -171,9 +173,11 @@ def injector_sdf(
     )
 
     # ------------------------------------------------------------------
-    # 5.  Full injector = face plate ∪ pintle post
+    # 5.  Full injector = face plate ∪ pintle post (smooth fillet at base)
     # ------------------------------------------------------------------
-    sdf = union(face_plate, pintle_post)
+    from noyron.rp.geometry.blend_config import BlendConfig as _BC
+    _blend = blend_config if blend_config is not None else _BC()
+    sdf = smooth_union(face_plate, pintle_post, k=_blend.pintle_to_face_plate)
 
     geom_info: dict = {
         "z_face": z_face,
@@ -199,6 +203,7 @@ def engine_assembly_sdf(
     pintle: "PintleInjector",
     face_thickness: float = 8e-3,
     n_profile_points: int = 500,
+    blend_config: "BlendConfig | None" = None,
 ) -> tuple[Callable, dict]:
     """
     Build the 3D SDF of the complete engine assembly.
@@ -229,7 +234,10 @@ def engine_assembly_sdf(
           'r_outer_max'  : float  max outer radius across the whole assembly [m]
           'injector_info': dict   geom_info from injector_sdf()
     """
+    from noyron.rp.geometry.blend_config import BlendConfig as _BC
     from noyron.rp.geometry.cooling_channels import chamber_with_channels_sdf
+
+    _blend = blend_config if blend_config is not None else _BC()
 
     # Trim chamber domain by face_thickness so the face-plate zone is left
     # entirely to f_inj — otherwise the revolve solid buries orifice voids.
@@ -248,9 +256,10 @@ def engine_assembly_sdf(
         nozzle=nozzle,
         bilayer=bilayer,
         face_thickness=face_thickness,
+        blend_config=_blend,
     )
 
-    f_assembly = union(f_main, f_inj)
+    f_assembly = smooth_union(f_main, f_inj, k=_blend.default)
 
     # z_face == nozzle.x_chamber_start, which matches z_min from chamber profile.
     z_face = float(inj_info["z_face"])

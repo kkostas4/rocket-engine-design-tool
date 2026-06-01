@@ -50,23 +50,29 @@ def difference(a, b):
     return lambda x, y, z: np.maximum(a(x, y, z), -b(x, y, z))
 
 
-def smooth_union(a, b, k: float = 0.01):
+def smooth_union(a, b, k: float = 0.0):
     """
     Smooth SDF union with blend radius k [m].
 
-    Blends the two shapes over a transition zone of radius k, avoiding the
-    C0 discontinuity of the hard union.  Useful for fillet-like blending.
+    Blends the two shapes over a transition zone of radius k, adding material
+    in the blend region to avoid the C0 kink of hard union.  When k=0 this
+    is identical to ``union`` (no extra computation).
 
         h = clip(0.5 + 0.5*(b-a)/k, 0, 1)
         f = mix(b, a, h) - k*h*(1-h)
 
-    Source: Quilez (2023), smooth minimum.
+    Source: Quilez, I. (2023). "Smooth Minimum."
+            iquilezles.org/articles/smin
 
     Parameters
     ----------
     k : float
-        Blend radius [m].  Larger k = smoother but more distorted SDF.
+        Blend radius [m].  Larger k = smoother fillet.  Must satisfy
+        k < 0.25 × (smallest adjacent feature) or the feature may vanish.
+        Pass k=0 for a sharp hard-union fallback.
     """
+    if k <= 0.0:
+        return union(a, b)
 
     def _f(x, y, z):
         da = a(x, y, z)
@@ -77,12 +83,51 @@ def smooth_union(a, b, k: float = 0.01):
     return _f
 
 
-def smooth_difference(a, b, k: float = 0.01):
+def smooth_intersection(a, b, k: float = 0.0):
     """
-    Smooth SDF difference (a minus b) with blend radius k.
+    Smooth SDF intersection with blend radius k [m].
 
-    Source: Quilez (2023), smooth subtraction.
+    When k=0 this is identical to ``intersection``.
+
+        h = clip(0.5 - 0.5*(b-a)/k, 0, 1)
+        f = mix(b, a, h) + k*h*(1-h)
+
+    Source: Quilez, I. (2023). "Smooth Minimum."
+            iquilezles.org/articles/smin
+
+    Parameters
+    ----------
+    k : float
+        Blend radius [m].  Pass k=0 for a sharp hard-intersection fallback.
     """
+    if k <= 0.0:
+        return intersection(a, b)
+
+    def _f(x, y, z):
+        da = a(x, y, z)
+        db = b(x, y, z)
+        h = np.clip(0.5 - 0.5 * (db - da) / k, 0.0, 1.0)
+        return db * (1.0 - h) + da * h + k * h * (1.0 - h)
+
+    return _f
+
+
+def smooth_difference(a, b, k: float = 0.0):
+    """
+    Smooth SDF difference (a minus b) with blend radius k [m].
+
+    When k=0 this is identical to ``difference``.
+
+    Source: Quilez, I. (2023). "Smooth Minimum."
+            iquilezles.org/articles/smin
+
+    Parameters
+    ----------
+    k : float
+        Blend radius [m].  Pass k=0 for a sharp hard-difference fallback.
+    """
+    if k <= 0.0:
+        return difference(a, b)
 
     def _f(x, y, z):
         da = a(x, y, z)

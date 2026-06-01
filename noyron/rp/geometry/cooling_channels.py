@@ -49,10 +49,11 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 from scipy.interpolate import interp1d  # type: ignore[import-untyped]
 
-from noyron.kernel.geometry.sdf.operations import difference
+from noyron.kernel.geometry.sdf.operations import smooth_difference
 from noyron.rp.geometry.chamber_nozzle import chamber_nozzle_sdf
 
 if TYPE_CHECKING:
+    from noyron.rp.geometry.blend_config import BlendConfig
     from noyron.rp.nozzle.rao import RaoNozzle
     from noyron.rp.regen.coolant import CoolingChannelGeometry
     from noyron.rp.structural.bilayer import BilayerWall
@@ -240,6 +241,7 @@ def chamber_with_channels_sdf(
     bilayer: "BilayerWall",
     L_chamber: float | None = None,
     n_profile_points: int = 500,
+    blend_config: "BlendConfig | None" = None,
 ) -> tuple[Callable, dict]:
     """
     SDF of the outer jacket with cooling channel voids carved in.
@@ -306,7 +308,9 @@ def chamber_with_channels_sdf(
         z_max=z_max,
     )
 
-    f_result = difference(f_jacket, f_channels)
+    from noyron.rp.geometry.blend_config import BlendConfig as _BC
+    _blend = blend_config if blend_config is not None else _BC()
+    f_result = smooth_difference(f_jacket, f_channels, k=_blend.channel_difference)
 
     profile["n_channels"] = n_ch
     profile["z_ch_start"] = z_min

@@ -55,6 +55,7 @@ from noyron.rp.structural.liner_stress import liner_stress_profile
 from noyron.rp.structural.materials import GRCOP84_PROXY, INCONEL718_STRUCT
 from noyron.cache import StepCache
 from noyron.kernel.manufacturing import AMRules, LPBF_GRCOP, AM_RULES_PRESETS
+from noyron.rp.geometry.blend_config import BlendConfig
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -240,6 +241,7 @@ class EngineRequirements:
     pump_pressure_margin: float = 2.0e6
     n_channels: int = 76
     am_rules: AMRules = LPBF_GRCOP
+    blend_config: BlendConfig = BlendConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -994,14 +996,17 @@ class Engine:
                     bilayer=design.bilayer,
                     channel_geometry=design.channel_geometry,
                     pintle=design.injector,
+                    blend_config=self._req.blend_config,
                 )
             elif comp == "full_engine":
-                from noyron.kernel.geometry.sdf.operations import union as _sdf_union
+                from noyron.kernel.geometry.sdf.operations import smooth_union as _sdf_smooth_union
+                _blend = self._req.blend_config
                 sdf_fn, profile = engine_assembly_sdf(
                     nozzle=design.nozzle,
                     bilayer=design.bilayer,
                     channel_geometry=design.channel_geometry,
                     pintle=design.injector,
+                    blend_config=_blend,
                 )
                 z_min = float(profile["z_min"])
                 z_max = float(profile["z_max"])
@@ -1013,7 +1018,11 @@ class Engine:
                     design.coolant_inlet_manifold,
                 ):
                     if _mfld is not None:
-                        sdf_fn = _sdf_union(sdf_fn, _mfld.to_sdf())
+                        sdf_fn = _sdf_smooth_union(
+                            sdf_fn,
+                            _mfld.to_sdf(blend_config=_blend),
+                            k=_blend.manifold_to_jacket,
+                        )
                         _lo, _hi = _mfld.bbox()
                         z_min = min(z_min, float(_lo[2]))
                         z_max = max(z_max, float(_hi[2]))

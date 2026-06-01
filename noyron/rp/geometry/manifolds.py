@@ -40,7 +40,8 @@ from noyron.kernel.component import (
     VerificationReport,
 )
 from noyron.kernel.geometry.revolved import annular_shell_sdf, cylindrical_boss_sdf
-from noyron.kernel.geometry.sdf.operations import union
+from noyron.kernel.geometry.sdf.operations import smooth_union
+from noyron.rp.geometry.blend_config import BlendConfig
 
 if TYPE_CHECKING:
     from noyron.kernel.component import SDF
@@ -165,6 +166,7 @@ class LoxDome(Component, Renderable):
         }
 
     def to_sdf(self, **context: Any) -> "SDF":
+        blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
         g = self._geom()
         t = cfg.wall_thickness
@@ -184,7 +186,7 @@ class LoxDome(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return union(shell, boss)
+        return smooth_union(shell, boss, k=blend.boss_to_manifold)
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -264,6 +266,7 @@ class FuelManifold(Component, Renderable):
         }
 
     def to_sdf(self, **context: Any) -> "SDF":
+        blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
         g = self._geom()
         t = cfg.wall_thickness
@@ -283,7 +286,7 @@ class FuelManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return union(shell, boss)
+        return smooth_union(shell, boss, k=blend.boss_to_manifold)
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -358,6 +361,7 @@ class CoolantOutletManifold(Component, Renderable):
         }
 
     def to_sdf(self, **context: Any) -> "SDF":
+        blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
         g = self._geom()
         t = cfg.wall_thickness
@@ -377,7 +381,7 @@ class CoolantOutletManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return union(shell, boss)
+        return smooth_union(shell, boss, k=blend.boss_to_manifold)
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -453,6 +457,7 @@ class CoolantInletManifold(Component, Renderable):
         }
 
     def to_sdf(self, **context: Any) -> "SDF":
+        blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
         g = self._geom()
         t = cfg.wall_thickness
@@ -472,7 +477,7 @@ class CoolantInletManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return union(shell, boss)
+        return smooth_union(shell, boss, k=blend.boss_to_manifold)
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()

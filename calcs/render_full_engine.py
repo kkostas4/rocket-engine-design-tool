@@ -9,13 +9,18 @@ manifold — to a single STL file.
 Usage
 -----
     python calcs/render_full_engine.py [--voxel-mm FLOAT] [--outdir PATH]
+                                       [--no-blend]
 
 Default voxel size: 0.4 mm.  Full render at 0.4 mm takes ~30 s on a
 modern laptop.  Use 1.0 mm for a quick preview.
 
+--no-blend produces a sharp-boolean assembly (BlendConfig all-zeros) saved
+as full_engine_sharp.stl alongside the smooth version for visual comparison.
+
 Output
 ------
-output/full_engine.stl  (default)
+output/full_engine.stl        (default — smooth fillets)
+output/full_engine_sharp.stl  (with --no-blend)
 
 Blender import hint
 -------------------
@@ -43,6 +48,9 @@ def main() -> None:
                         help="Voxel size in mm (default 0.4)")
     parser.add_argument("--outdir", type=Path, default=Path("output"),
                         help="Output directory (default: output/)")
+    parser.add_argument("--no-blend", action="store_true",
+                        help="Disable smooth fillets; all boolean ops are sharp "
+                             "(saves as full_engine_sharp.stl)")
     args = parser.parse_args()
 
     voxel_size = args.voxel_mm * 1e-3
@@ -53,6 +61,20 @@ def main() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         from noyron.rp.engine import Engine, EngineRequirements, METHALOX
+        from noyron.rp.geometry.blend_config import BlendConfig
+
+    blend_cfg = (
+        BlendConfig(
+            boss_to_manifold=0.0,
+            manifold_to_chamber=0.0,
+            manifold_to_jacket=0.0,
+            chamber_to_nozzle=0.0,
+            pintle_to_face_plate=0.0,
+            default=0.0,
+        )
+        if args.no_blend
+        else BlendConfig()
+    )
 
     req = EngineRequirements(
         thrust=4448.22,
@@ -60,6 +82,7 @@ def main() -> None:
         mixture_ratio=3.60,
         propellant=METHALOX,
         expansion_ratio=10.605,
+        blend_config=blend_cfg,
     )
     engine = Engine(req)
     with warnings.catch_warnings():
@@ -89,7 +112,9 @@ def main() -> None:
     # -----------------------------------------------------------------
     # Render
     # -----------------------------------------------------------------
-    print(f"\nRendering full_engine at {args.voxel_mm:.1f} mm voxels …")
+    label = "sharp" if args.no_blend else "smooth"
+    stl_key = "full_engine_sharp" if args.no_blend else "full_engine"
+    print(f"\nRendering full_engine ({label}) at {args.voxel_mm:.1f} mm voxels …")
     t_render = time.perf_counter()
 
     with warnings.catch_warnings():
@@ -103,8 +128,22 @@ def main() -> None:
 
     elapsed = time.perf_counter() - t_render
     stl_path = out["full_engine"]
+    if args.no_blend:
+        sharp_path = stl_path.with_name("full_engine_sharp.stl")
+        stl_path.rename(sharp_path)
+        stl_path = sharp_path
     size_mb = stl_path.stat().st_size / 1e6
+    try:
+        import trimesh  # type: ignore[import-untyped]
+        mesh = trimesh.load(stl_path, force="mesh")
+        verts = len(mesh.vertices)
+        faces = len(mesh.faces)
+        watertight = mesh.is_watertight
+        mesh_info = f"  verts={verts:,}  faces={faces:,}  watertight={watertight}"
+    except Exception:
+        mesh_info = "  (trimesh not available — skipping mesh stats)"
     print(f"  Written: {stl_path}  ({size_mb:.1f} MB)  in {elapsed:.1f} s")
+    print(mesh_info)
 
     # -----------------------------------------------------------------
     # Bounding box summary
