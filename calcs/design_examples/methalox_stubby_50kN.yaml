@@ -1,0 +1,27 @@
+# methalox_stubby_50kN.yaml
+# -------------------------
+# 50 kN class methane/LOX engine demonstrating chamber proportion control.
+# High Ac/At=6 and low L*=0.85 give a short, wide ("stubby") chamber —
+# L_chamber < 150 mm, chamber diameter > 90 mm.
+#
+# Compare with methalox_50kN.yaml (default Ac/At=4, L*=1.1) to see how
+# these parameters shape the cylindrical chamber section.
+#
+# Run with:
+#   python -m noyron design --config calcs/design_examples/methalox_stubby_50kN.yaml --render
+
+thrust: 50000.0          # N
+pc: 10.0e6               # Pa  (= 100 bar)
+mr: 3.50                 # O/F mass ratio
+propellant: methalox
+epsilon: 20.0            # expansion ratio Ae/At
+
+# --- chamber proportion overrides ---
+l_star: 0.85             # m   characteristic length (default 1.1 m for methalox)
+ac_at: 6.0               # Ac/At chamber-to-throat area ratio (default 4.0)
+
+# --- scaled parameters for 100-bar / 50 kN ---
+t_wall_max: 1500.0       # K   (DB conservative; real T_wall ~650-970 K)
+dp_coolant: 5.0e6        # Pa  coolant pressure-drop budget
+n_cycles: 100            # required LCF life
+pump_margin: 5.0e6       # Pa  feed-system pump head above Pc + dP_inj

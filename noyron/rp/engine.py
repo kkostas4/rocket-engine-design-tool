@@ -32,7 +32,7 @@ from typing import Any, Optional, Union
 import numpy as np
 
 from noyron.rp.thermochem.cea import CEA
-from noyron.rp.nozzle.rao import RaoNozzle, throat_area
+from noyron.rp.nozzle.rao import DEFAULT_L_STAR, RaoNozzle, throat_area
 from noyron.rp.regen.bartz import CombustionGas, mach_from_area_ratio
 from noyron.rp.regen.coolant import (
     CoolingChannelGeometry,
@@ -242,6 +242,9 @@ class EngineRequirements:
     n_channels: int = 76
     am_rules: AMRules = LPBF_GRCOP
     blend_config: BlendConfig = BlendConfig()
+    # Chamber proportion overrides  (None → use DEFAULT_L_STAR[propellant])
+    L_star: Optional[float] = None
+    Ac_At: float = 4.0
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +322,8 @@ class EngineDesign:
                 "pump_pressure_margin": req.pump_pressure_margin,
                 "n_channels": req.n_channels,
                 "am_process": am_process,
+                "L_star": req.L_star,
+                "Ac_At": req.Ac_At,
             },
             "gas": {f.name: getattr(self.gas, f.name) for f in dataclasses.fields(self.gas)},
             "nozzle": {f.name: getattr(nozzle, f.name) for f in dataclasses.fields(nozzle)},
@@ -414,6 +419,8 @@ class EngineDesign:
             pump_pressure_margin=r.get("pump_pressure_margin", 2.0e6),
             n_channels=r.get("n_channels", 76),
             am_rules=am_rules,
+            L_star=r.get("L_star", None),
+            Ac_At=r.get("Ac_At", 4.0),
         )
 
         gas = CombustionGas(**d["gas"])
@@ -722,9 +729,18 @@ class Engine:
 
         # ------------------------------------------------------------------
         # 2. Nozzle (+ mass flow derivation, which depends only on gas_key)
-        # Key: gas_key + thrust + expansion_ratio.
+        # Key: gas_key + thrust + expansion_ratio + L_star + Ac_At.
         # ------------------------------------------------------------------
-        nozzle_key = ("nozzle", gas_key, req.thrust, req.expansion_ratio)
+        _prop_name = _PROPELLANT_NAMES.get(id(prop), "methalox")
+        _l_star_resolved = (
+            req.L_star
+            if req.L_star is not None
+            else DEFAULT_L_STAR.get(_prop_name, 1.1)
+        )
+        nozzle_key = (
+            "nozzle", gas_key, req.thrust, req.expansion_ratio,
+            _l_star_resolved, req.Ac_At,
+        )
 
         def _compute_nozzle():
             m_dot, m_dot_ox, m_dot_fuel = _mass_flows(
@@ -733,7 +749,12 @@ class Engine:
             At = throat_area(m_dot, req.chamber_pressure, gas.c_star)
             r_throat = math.sqrt(At / math.pi)
             return (
-                RaoNozzle(r_throat=r_throat, epsilon=req.expansion_ratio),
+                RaoNozzle(
+                    r_throat=r_throat,
+                    epsilon=req.expansion_ratio,
+                    L_star=_l_star_resolved,
+                    Ac_At=req.Ac_At,
+                ),
                 m_dot, m_dot_ox, m_dot_fuel,
             )
 

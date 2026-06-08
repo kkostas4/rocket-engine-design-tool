@@ -95,6 +95,10 @@ _KEY_MAP: dict[str, str] = {
     "n_channels":            "n_channels",
     "propellant":            "propellant",
     "am_process":            "am_rules",
+    "l_star":                "L_star",
+    "L_star":                "L_star",
+    "ac_at":                 "Ac_At",
+    "Ac_At":                 "Ac_At",
 }
 
 
@@ -301,7 +305,10 @@ def design_one_point(
             "dp_coolant":  req.dP_coolant_budget,
             "n_cycles":    req.n_cycles_required,
             "pump_margin": req.pump_pressure_margin,
+            "ac_at":       req.Ac_At,
         }
+        if req.L_star is not None:
+            req_dict["l_star"] = req.L_star
         try:
             import yaml
             with (point_dir / "requirements.yaml").open("w") as fh:
@@ -428,18 +435,22 @@ def run_sweep(config: SweepConfig) -> Path:
 def _write_sweep_config(config: SweepConfig) -> None:
     """Write sweep_config.yaml to the output directory."""
     req = config.base
+    _base_dict: dict[str, Any] = {
+        "thrust":      req.thrust,
+        "pc":          req.chamber_pressure,
+        "mr":          req.mixture_ratio,
+        "propellant":  _propellant_name_str(req.propellant),
+        "epsilon":     req.expansion_ratio,
+        "t_wall_max":  req.T_wall_max,
+        "dp_coolant":  req.dP_coolant_budget,
+        "n_cycles":    req.n_cycles_required,
+        "pump_margin": req.pump_pressure_margin,
+        "ac_at":       req.Ac_At,
+    }
+    if req.L_star is not None:
+        _base_dict["l_star"] = req.L_star
     data: dict[str, Any] = {
-        "base": {
-            "thrust":      req.thrust,
-            "pc":          req.chamber_pressure,
-            "mr":          req.mixture_ratio,
-            "propellant":  _propellant_name_str(req.propellant),
-            "epsilon":     req.expansion_ratio,
-            "t_wall_max":  req.T_wall_max,
-            "dp_coolant":  req.dP_coolant_budget,
-            "n_cycles":    req.n_cycles_required,
-            "pump_margin": req.pump_pressure_margin,
-        },
+        "base": _base_dict,
         "variations": {k: list(v) for k, v in config.variations.items()},
         "parallel": config.parallel,
         "render": config.render,

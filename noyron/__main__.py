@@ -96,6 +96,10 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Channel count hint (sizer sweeps internally; default: 76)")
     p.add_argument("--pump-margin", type=float, default=None, metavar="Pa",
                    help="Feed-system pump head margin above Pc+dP_inj [Pa] (default: 2e6)")
+    p.add_argument("--l-star", type=float, default=None, metavar="M",
+                   help="Characteristic chamber length L* [m] (default: propellant preset)")
+    p.add_argument("--ac-at", type=float, default=None, metavar="[-]",
+                   help="Chamber-to-throat area ratio Ac/At (default: 4.0)")
     p.add_argument("--config", type=Path, default=None, metavar="YAML",
                    help="YAML config file.  CLI flags override file values.")
     p.add_argument("--render", action="store_true",
@@ -186,6 +190,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p4.add_argument("--am-process", type=str, default=None, metavar="PROCESS",
                     choices=["lpbf-grcop", "lpbf-inconel", "binder-jet-inconel", "subtractive-inconel"],
                     help="Manufacturing process rules preset (default: lpbf-grcop)")
+    p4.add_argument("--l-star", type=float, default=None, metavar="M",
+                    help="Characteristic chamber length L* [m]")
+    p4.add_argument("--ac-at", type=float, default=None, metavar="[-]",
+                    help="Chamber-to-throat area ratio Ac/At (default: 4.0)")
     p4.add_argument("--verbose", action="store_true",
                     help="Show full Python tracebacks on errors.")
 
@@ -264,6 +272,8 @@ _CONFIG_FIELDS: dict[str, tuple[str, Any]] = {
     "n_channels":     ("n_channels",          76),
     "pump_margin":    ("pump_pressure_margin", 2.0e6),
     "am_process":     ("am_rules",            "lpbf-grcop"),
+    "l_star":         ("L_star",              None),   # None → use propellant DEFAULT_L_STAR
+    "ac_at":          ("Ac_At",               4.0),
 }
 
 
@@ -305,6 +315,8 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
         "n_channels":  args.n_channels,
         "pump_margin": args.pump_margin,
         "am_process":  args.am_process if hasattr(args, "am_process") else None,
+        "l_star":      getattr(args, "l_star", None),
+        "ac_at":       getattr(args, "ac_at", None),
     }
     for k, v in cli_map.items():
         if v is not None:
@@ -341,6 +353,7 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
         )
     am_rules = AM_RULES_PRESETS[am_process_key]
 
+    _l_star_raw = cfg.get("l_star", None)
     return EngineRequirements(
         thrust=float(cfg["thrust"]),
         chamber_pressure=float(cfg["pc"]),
@@ -353,6 +366,8 @@ def _build_requirements(args: argparse.Namespace, verbose: bool = False):
         pump_pressure_margin=float(cfg.get("pump_margin", 2.0e6)),
         n_channels=int(cfg.get("n_channels", 76)),
         am_rules=am_rules,
+        L_star=float(_l_star_raw) if _l_star_raw is not None else None,
+        Ac_At=float(cfg.get("ac_at", 4.0)),
     )
 
 
@@ -400,7 +415,10 @@ def _write_outputs(
         "n_channels":  req.n_channels,
         "pump_margin": req.pump_pressure_margin,
         "am_process":  am_process_key,
+        "ac_at":       req.Ac_At,
     }
+    if req.L_star is not None:
+        req_yaml["l_star"] = req.L_star
     _write_yaml(req_yaml, output_dir / "requirements.yaml")
 
     # STLs
