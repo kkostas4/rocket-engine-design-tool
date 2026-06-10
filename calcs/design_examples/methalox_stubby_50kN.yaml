@@ -11,7 +11,7 @@
 #   python -m noyron design --config calcs/design_examples/methalox_stubby_50kN.yaml --render
 
 thrust: 50000.0          # N
-pc: 10.0e6               # Pa  (= 100 bar)
+pc: 1.0e+7               # Pa  (= 100 bar)
 mr: 3.50                 # O/F mass ratio
 propellant: methalox
 epsilon: 20.0            # expansion ratio Ae/At
@@ -22,6 +22,6 @@ ac_at: 6.0               # Ac/At chamber-to-throat area ratio (default 4.0)
 
 # --- scaled parameters for 100-bar / 50 kN ---
 t_wall_max: 1500.0       # K   (DB conservative; real T_wall ~650-970 K)
-dp_coolant: 5.0e6        # Pa  coolant pressure-drop budget
+dp_coolant: 2.5e+7       # Pa  coolant pressure-drop budget (DB model needs ~24 MPa min at 50 kN / 100 bar; real ΔP ~8 MPa with Pizzarelli)
 n_cycles: 100            # required LCF life
-pump_margin: 5.0e6       # Pa  feed-system pump head above Pc + dP_inj
+pump_margin: 3.0e+7      # Pa  feed-system pump head above Pc + dP_inj

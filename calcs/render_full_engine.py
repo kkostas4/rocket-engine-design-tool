@@ -117,21 +117,25 @@ def main() -> None:
     print(f"\nRendering full_engine ({label}) at {args.voxel_mm:.1f} mm voxels …")
     t_render = time.perf_counter()
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        out = engine.render(
-            design,
-            voxel_size=voxel_size,
-            output_dir=args.outdir,
-            components=("full_engine",),
-        )
+    # Render into a staging directory so --no-blend never clobbers full_engine.stl.
+    import tempfile, shutil
+    with tempfile.TemporaryDirectory() as _tmp:
+        _tmp_path = Path(_tmp)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            out = engine.render(
+                design,
+                voxel_size=voxel_size,
+                output_dir=_tmp_path,
+                components=("full_engine",),
+            )
+        _src = out["full_engine"]
+        _dest_name = "full_engine_sharp.stl" if args.no_blend else "full_engine.stl"
+        stl_path = args.outdir / _dest_name
+        args.outdir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(_src), stl_path)
 
     elapsed = time.perf_counter() - t_render
-    stl_path = out["full_engine"]
-    if args.no_blend:
-        sharp_path = stl_path.with_name("full_engine_sharp.stl")
-        stl_path.rename(sharp_path)
-        stl_path = sharp_path
     size_mb = stl_path.stat().st_size / 1e6
     try:
         import trimesh  # type: ignore[import-untyped]
