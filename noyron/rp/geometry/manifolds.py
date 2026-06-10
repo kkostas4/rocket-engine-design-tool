@@ -40,7 +40,7 @@ from noyron.kernel.component import (
     VerificationReport,
 )
 from noyron.kernel.geometry.revolved import annular_shell_sdf, cylindrical_boss_sdf
-from noyron.kernel.geometry.sdf.operations import smooth_union
+from noyron.kernel.geometry.sdf.operations import smooth_union, difference
 from noyron.rp.geometry.blend_config import BlendConfig
 
 if TYPE_CHECKING:
@@ -49,6 +49,25 @@ if TYPE_CHECKING:
     from noyron.rp.nozzle.rao import RaoNozzle
     from noyron.rp.structural.bilayer import BilayerWall
     from noyron.rp.injector.pintle import PintleInjector
+
+
+# ---------------------------------------------------------------------------
+# Flow-path geometry constants
+# ---------------------------------------------------------------------------
+
+# Injector face plate axial thickness [m].
+# Source: Huzel & Huang (1992) §4.2 — typical face plate sizing.
+_FACE_THICKNESS: float = 8e-3
+
+# Radial offset from the LOX annulus OD to the fuel orifice centreline [m].
+# Positions the orifice just outside the LOX annulus gap.
+# Source: NASA SP-8089 (1976) §4.2.
+_ORIFICE_RADIAL_MARGIN: float = 2e-3
+
+# Diameter of each radial fuel channel cut through the face plate [m].
+# Sized to be wider than the orifice bore (0.82 mm) so the passage
+# is the constriction, not the approach channel.
+_FLOW_PATH_CHANNEL_OD: float = 4e-3
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +184,26 @@ class LoxDome(Component, Renderable):
             "dome_height": dome_height,
         }
 
+    def flow_path_sdf(self) -> "SDF":
+        """
+        Axial cylindrical void that opens the dome face into the LOX annulus.
+
+        The cylinder is centred on the engine axis and spans the full dome
+        height (z_lo → z_hi).  Its OD matches the LOX annulus outer diameter
+        so every point in the annular gap (pintle_OD/2 < r < lox_annulus_OD/2)
+        at the dome face is void after subtraction.  SDF < 0 inside the void.
+
+        Source: Dressler & Bauer (2000) AIAA 2000-3871 §3 — dome-to-annulus
+                flow path geometry.
+        """
+        g = self._geom()
+        return cylindrical_boss_sdf(
+            axis_origin=(0.0, 0.0, g["z_lo"]),
+            axis_direction=(0.0, 0.0, 1.0),
+            OD=self.injector.lox_annulus_OD,
+            length=g["dome_height"],
+        )
+
     def to_sdf(self, **context: Any) -> "SDF":
         blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
@@ -186,7 +225,8 @@ class LoxDome(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return smooth_union(shell, boss, k=blend.boss_to_manifold)
+        return difference(smooth_union(shell, boss, k=blend.boss_to_manifold),
+                          self.flow_path_sdf())
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -265,6 +305,52 @@ class FuelManifold(Component, Renderable):
             "r_inner": r_inner, "r_outer": r_outer,
         }
 
+    def flow_path_sdf(self) -> "SDF":
+        """
+        Union of N radial cylindrical channels cut through the face plate.
+
+        Each channel runs from the LOX annulus OD + _ORIFICE_RADIAL_MARGIN
+        outward to the manifold inner radius (jacket OD), at the face plate
+        axial midplane (z_hi + _FACE_THICKNESS/2).  Channels are evenly
+        distributed in azimuth, one per fuel orifice.  SDF < 0 inside any
+        channel.
+
+        Implementation uses N-fold rotational symmetry: for any probe point,
+        snap its azimuthal angle to the nearest channel and evaluate the SDF
+        for that single channel.  This avoids evaluating N cylindrical SDFs
+        per sample point.
+
+        Source: NASA SP-8089 (1976) §4.2 — face plate radial orifice feed
+                channel geometry.
+        """
+        g = self._geom()
+        n = self.injector.n_fuel_orifices
+        r_start = self.injector.lox_annulus_OD / 2.0 + _ORIFICE_RADIAL_MARGIN
+        channel_length = g["r_inner"] - r_start
+        z_face_mid = g["z_hi"] + _FACE_THICKNESS / 2.0
+        R = _FLOW_PATH_CHANNEL_OD / 2.0
+        dtheta = 2.0 * math.pi / n
+
+        def _f(x, y, z):
+            x_ = np.asarray(x, dtype=float)
+            y_ = np.asarray(y, dtype=float)
+            z_ = np.asarray(z, dtype=float)
+
+            # Snap azimuth to nearest channel; angular error is in [-dtheta/2, dtheta/2]
+            theta = np.arctan2(y_, x_)
+            snap = np.round(theta / dtheta) * dtheta
+            ang_err = theta - snap
+
+            rho = np.sqrt(x_ ** 2 + y_ ** 2)
+            # Axial projection along nearest channel from r_start
+            t_along = rho * np.cos(ang_err) - r_start
+            # Perpendicular distance from nearest channel axis
+            rho_perp = np.sqrt(rho ** 2 * np.sin(ang_err) ** 2 + (z_ - z_face_mid) ** 2)
+
+            return np.maximum(np.maximum(rho_perp - R, -t_along), t_along - channel_length)
+
+        return _f
+
     def to_sdf(self, **context: Any) -> "SDF":
         blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
@@ -286,7 +372,8 @@ class FuelManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return smooth_union(shell, boss, k=blend.boss_to_manifold)
+        return difference(smooth_union(shell, boss, k=blend.boss_to_manifold),
+                          self.flow_path_sdf())
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -360,6 +447,28 @@ class CoolantOutletManifold(Component, Renderable):
             "r_inner": r_inner, "r_outer": r_outer,
         }
 
+    def flow_path_sdf(self) -> "SDF":
+        """
+        Axial cylinder that opens the manifold inner wall into the cooling channels.
+
+        The cylinder is centred on the engine axis, spans z_lo → z_hi (the full
+        manifold axial extent), and has radius = r_inner + wall_thickness.  This
+        covers the entire inner-wall region (r_inner < r < r_inner + wall_thickness)
+        at every azimuthal position, creating a continuous annular slot.  Points
+        inside the cylinder (r < r_inner + wall_thickness) and within the axial
+        range have SDF < 0.
+
+        Source: NASA SP-8087 (1977) §3.3 — coolant outlet manifold slot geometry.
+        """
+        g = self._geom()
+        r_slot = g["r_inner"] + self.config.wall_thickness
+        return cylindrical_boss_sdf(
+            axis_origin=(0.0, 0.0, g["z_lo"]),
+            axis_direction=(0.0, 0.0, 1.0),
+            OD=2.0 * r_slot,
+            length=g["z_hi"] - g["z_lo"],
+        )
+
     def to_sdf(self, **context: Any) -> "SDF":
         blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
@@ -381,7 +490,8 @@ class CoolantOutletManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return smooth_union(shell, boss, k=blend.boss_to_manifold)
+        return difference(smooth_union(shell, boss, k=blend.boss_to_manifold),
+                          self.flow_path_sdf())
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -456,6 +566,25 @@ class CoolantInletManifold(Component, Renderable):
             "r_inner": r_inner, "r_outer": r_outer,
         }
 
+    def flow_path_sdf(self) -> "SDF":
+        """
+        Axial cylinder that opens the manifold inner wall into the cooling channels.
+
+        Identical in structure to CoolantOutletManifold.flow_path_sdf — an
+        annular slot of radius r_inner + wall_thickness spanning the full
+        manifold axial extent at the nozzle exit end.  SDF < 0 inside.
+
+        Source: NASA SP-8087 (1977) §3.3 — coolant inlet manifold slot geometry.
+        """
+        g = self._geom()
+        r_slot = g["r_inner"] + self.config.wall_thickness
+        return cylindrical_boss_sdf(
+            axis_origin=(0.0, 0.0, g["z_lo"]),
+            axis_direction=(0.0, 0.0, 1.0),
+            OD=2.0 * r_slot,
+            length=g["z_hi"] - g["z_lo"],
+        )
+
     def to_sdf(self, **context: Any) -> "SDF":
         blend: BlendConfig = context.get("blend_config", BlendConfig())
         cfg = self.config
@@ -477,7 +606,8 @@ class CoolantInletManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return smooth_union(shell, boss, k=blend.boss_to_manifold)
+        return difference(smooth_union(shell, boss, k=blend.boss_to_manifold),
+                          self.flow_path_sdf())
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
