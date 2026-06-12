@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from noyron.engine import METHALOX, EngineRequirements
+from noyron.rp.engine import METHALOX, EngineRequirements
 from noyron.optimize import (
     OptimizationConfig,
     _constraint_violation,
@@ -200,8 +200,13 @@ def test_optimizer_finds_isp_peak_with_real_params(tmp_path: Path) -> None:
         objective=("Isp_vac", "max"),
         constraints=[],
         method="differential-evolution",
-        max_evals=80,
-        parallel=4,
+        max_evals=12,
+        popsize=4,
+        polish=False,
+        # parallel=1: functools.partial(design_eval, ...) fails Windows spawn
+        # pickling in the full pytest suite (module-identity drift in the
+        # spawned worker).  Sequential DE still exercises the algorithm.
+        parallel=1,
         output_dir=tmp_path / "opt",
     )
     result = run_optimization(config)

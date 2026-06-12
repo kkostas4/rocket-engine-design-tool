@@ -196,7 +196,7 @@ def test_changing_pc_invalidates_downstream() -> None:
 def test_changing_n_cycles_invalidates_only_lcf() -> None:
     """n_cycles_required appears only in the LCF key, so bumping it leaves
     all upstream steps (gas through structural) in the cache unchanged."""
-    import noyron.engine as _eng_module
+    import noyron.rp.engine as _eng_module
 
     req = _REF_REQ
     eng = Engine(req)
