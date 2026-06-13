@@ -19,7 +19,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from noyron.rp.engine import METHALOX, EngineRequirements
 from noyron.optimize import (
     OptimizationConfig,
     _constraint_violation,
@@ -34,8 +33,9 @@ from noyron.optimize import (
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def base_req() -> EngineRequirements:
+def base_req():
     """Reference engine requirements used across all optimize tests."""
+    from noyron.rp.engine import METHALOX, EngineRequirements
     return EngineRequirements(
         thrust=4448.22,
         chamber_pressure=6.8948e6,
@@ -187,6 +187,7 @@ def test_optimizer_finds_isp_peak_with_real_params(tmp_path: Path) -> None:
     """Verify the optimizer can actually find MR=3.3 (the known Isp
     peak for methalox at Pc=7 MPa, eps=10.6 from CEA). Uses
     production-grade DE parameters; takes 5-15 min on a laptop."""
+    from noyron.rp.engine import METHALOX, EngineRequirements
     base = EngineRequirements(
         thrust=5e3,
         chamber_pressure=7e6,

@@ -155,40 +155,31 @@ class TestNoInternalDeprecationWarnings:
 
     def test_engine_import_no_deprecation(self):
         """noyron.rp.engine (and all its internal imports) must not fire DeprecationWarning."""
-        # Strip engine + physics from module cache so re-import is fresh.
-        # Save and restore so downstream tests see unchanged module-object identities
-        # (e.g. METHALOX id used by test_optimize.py's _PROPELLANT_NAMES lookup).
-        saved = {k: v for k, v in sys.modules.items()
-                 if k.startswith("noyron") or k.startswith("physics") or k.startswith("geometry")}
-        for k in saved:
-            del sys.modules[k]
+        # Strip engine + physics from module cache so re-import is fresh
+        to_remove = [
+            k for k in sys.modules
+            if k.startswith("noyron") or k.startswith("physics") or k.startswith("geometry")
+        ]
+        for k in to_remove:
+            sys.modules.pop(k, None)
 
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                importlib.import_module("noyron.rp.engine")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            importlib.import_module("noyron.rp.engine")
 
-            shim_paths = [
-                "geometry/sdf", "geometry/mesh",
-                "physics/heat_exchanger", "physics/util",
-                "physics/nozzle", "physics/regen", "physics/structural",
-                "physics/injector", "physics/thermochem", "geometry/components",
-            ]
-            dep_warnings = [
-                x for x in w
-                if issubclass(x.category, DeprecationWarning)
-                and "deprecated" in str(x.message).lower()
-                and any(path in str(x.filename).replace("\\", "/") for path in shim_paths)
-            ]
-            assert not dep_warnings, (
-                f"noyron.rp.engine import triggered {len(dep_warnings)} DeprecationWarning(s):\n"
-                + "\n".join(f"  {x.filename}:{x.lineno}: {x.message}" for x in dep_warnings)
-            )
-        finally:
-            # Remove any noyron/physics/geometry modules loaded during the test,
-            # then restore the originals so downstream module-level name bindings
-            # (e.g. METHALOX in test_optimize.py) remain valid.
-            for k in list(sys.modules):
-                if k.startswith("noyron") or k.startswith("physics") or k.startswith("geometry"):
-                    del sys.modules[k]
-            sys.modules.update(saved)
+        shim_paths = [
+            "geometry/sdf", "geometry/mesh",
+            "physics/heat_exchanger", "physics/util",
+            "physics/nozzle", "physics/regen", "physics/structural",
+            "physics/injector", "physics/thermochem", "geometry/components",
+        ]
+        dep_warnings = [
+            x for x in w
+            if issubclass(x.category, DeprecationWarning)
+            and "deprecated" in str(x.message).lower()
+            and any(path in str(x.filename).replace("\\", "/") for path in shim_paths)
+        ]
+        assert not dep_warnings, (
+            f"noyron.rp.engine import triggered {len(dep_warnings)} DeprecationWarning(s):\n"
+            + "\n".join(f"  {x.filename}:{x.lineno}: {x.message}" for x in dep_warnings)
+        )
