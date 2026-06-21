@@ -32,7 +32,7 @@ from unittest.mock import patch, call
 import numpy as np
 import pytest
 
-from noyron.engine import (
+from noyron.rp.engine import (
     Engine,
     EngineDesign,
     EngineRequirements,
@@ -259,7 +259,7 @@ def test_changing_n_cycles_invalidates_only_lcf() -> None:
 def test_changing_propellant_invalidates_everything() -> None:
     """A propellant change alters the gas_key, so every downstream key
     changes too.  Both Engine instances maintain independent caches."""
-    import noyron.engine as _eng_module
+    import noyron.rp.engine as _eng_module
 
     # We only check KEROLOX's gas properties differ from METHALOX;
     # we don't need a full design() of KEROLOX (it may fail the sizer
