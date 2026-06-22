@@ -1052,6 +1052,11 @@ class Engine:
                             abs(float(_lo[1])), float(_hi[1]),
                         )
                         r_outer_max = max(r_outer_max, _r)
+                # Fuel radial passages span manifold shell + face plate; subtract
+                # from the fully-unioned assembly so both materials are cut.
+                if design.fuel_manifold is not None:
+                    from noyron.kernel.geometry.sdf.operations import difference as _sdf_difference
+                    sdf_fn = _sdf_difference(sdf_fn, design.fuel_manifold.flow_path_sdf())
                 profile = {
                     "z_min": z_min,
                     "z_max": z_max,

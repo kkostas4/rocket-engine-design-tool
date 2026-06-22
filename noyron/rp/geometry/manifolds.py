@@ -197,10 +197,13 @@ class LoxDome(Component, Renderable):
                 flow path geometry.
         """
         g = self._geom()
+        # OD is widened by 4 mm (2 mm on each side) so the annular slot at
+        # the dome floor is at least 2 mm radially — well above the 0.4 mm
+        # voxel resolution used for rendering.
         return cylindrical_boss_sdf(
             axis_origin=(0.0, 0.0, g["z_lo"]),
             axis_direction=(0.0, 0.0, 1.0),
-            OD=self.injector.lox_annulus_OD,
+            OD=self.injector.lox_annulus_OD + 4e-3,
             length=g["dome_height"],
         )
 
@@ -326,8 +329,12 @@ class FuelManifold(Component, Renderable):
         g = self._geom()
         n = self.injector.n_fuel_orifices
         r_start = self.injector.lox_annulus_OD / 2.0 + _ORIFICE_RADIAL_MARGIN
-        channel_length = g["r_inner"] - r_start
-        z_face_mid = g["z_hi"] + _FACE_THICKNESS / 2.0
+        # Extend one wall_thickness past r_inner so the channel breaches the
+        # manifold inner wall and opens into the cavity.
+        channel_length = g["r_inner"] + self.config.wall_thickness - r_start
+        # Face-plate midplane is upstream of the chamber face (z_hi), so the
+        # sign is negative in the z < 0 upstream convention.
+        z_face_mid = g["z_hi"] - _FACE_THICKNESS / 2.0
         R = _FLOW_PATH_CHANNEL_OD / 2.0
         dtheta = 2.0 * math.pi / n
 
@@ -372,8 +379,10 @@ class FuelManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return difference(smooth_union(shell, boss, k=blend.boss_to_manifold),
-                          self.flow_path_sdf())
+        # Fuel radial passages are NOT subtracted here; they span across both
+        # this shell and the injector face plate.  Subtraction happens at the
+        # engine assembly level so both materials are cut simultaneously.
+        return smooth_union(shell, boss, k=blend.boss_to_manifold)
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
