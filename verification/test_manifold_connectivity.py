@@ -506,3 +506,100 @@ def test_coolant_inlet_boss_bore_reaches_cavity(design):
         ("C 2mm in wall", px, r_out - 0.002,       g["z_ctr"]),
         ("D 7mm in",      px, r_out - 0.007,       g["z_ctr"]),
     ])
+
+
+# ---------------------------------------------------------------------------
+# Tests 12–13: LOX dome floor overlaps face plate — no floating-cap artifact
+# ---------------------------------------------------------------------------
+#
+# The dome floor extends _LOX_DOME_FLOOR_LIP = 2.5 mm downstream past
+# x_chamber_start to overlap the face plate.  Without this lip both surfaces
+# share the same boundary plane and smooth_union(0, 0, k=1.5 mm) = -k/4 =
+# -0.375 mm < 0.4 mm voxel pitch → invisible seam in marching cubes output.
+#
+# Test 12 checks the SDF depth at z = x_chamber_start - 1 mm (1 mm above
+# the original contact plane, inside the dome floor).  Without the lip the
+# dome shell SDF there is -1.0 mm (surface-to-void distance only 1 voxel).
+# With the lip the shell extends 2.5 mm further so the SDF is ~-3 mm —
+# well above the 1.5 mm threshold.
+#
+# Test 13 checks that 16 azimuthal probes at the support-ring mid-radius and
+# z = x_chamber_start all remain solid.  This guards against a future
+# regression where the floor hole is widened past the face-plate inner radius.
+
+
+def test_dome_face_plate_overlap_visible(design):
+    """
+    Assembly SDF inside the dome-floor overlap zone must be ≤ -1.5 mm
+    (3.75× voxel pitch) so the dome-to-face-plate joint renders in marching
+    cubes.
+
+    Probe at z = x_chamber_start + 1 mm (1 mm downstream, inside the 2.5 mm
+    lip that overlaps the face plate) at the support-ring mid-radius.
+    Without the dome lip the dome SDF here is +1.0 mm (void — dome ends at
+    x_chamber_start), so smooth_union with the face plate gives only ≈ -1.0 mm.
+    With the lip the dome SDF is -1.5 mm and smooth_union gives ≈ -1.7 mm.
+
+    Note: probe at z_hi + 1 mm, NOT z_hi - 1 mm — extending z_hi_extended
+    also shifts z_cav_hi = z_hi_extended - wall_t closer to z_hi, so the
+    dome SDF 1 mm above the old contact plane is cavity-limited to -0.5 mm.
+    The overlap zone is downstream of x_chamber_start, not upstream.
+    """
+    assembly = _build_full_assembly_sdf(design)
+    dome = LoxDome(nozzle=design.nozzle, bilayer=design.bilayer,
+                   injector=design.injector)
+    g = dome._geom()
+
+    z_probe = g["z_hi"] + 1e-3  # 1 mm downstream, inside the overlap zone
+    floor_hole_r = (design.injector.lox_annulus_OD + 4e-3) / 2.0
+    r_ch_inner = float(design.nozzle.r_chamber)
+    r_probe = (floor_hole_r + r_ch_inner) / 2.0  # support-ring mid-radius
+
+    N = 8
+    angles = [i * 2 * math.pi / N for i in range(N)]
+    xs = np.array([r_probe * math.cos(a) for a in angles])
+    ys = np.array([r_probe * math.sin(a) for a in angles])
+    zs = np.full(N, z_probe)
+
+    vals = assembly(xs, ys, zs)
+    threshold = -1.5e-3  # ≤ -1.5 mm required
+
+    assert np.all(vals <= threshold), (
+        f"Assembly SDF in dome-face-plate overlap zone (r={r_probe*1e3:.2f} mm, "
+        f"z={z_probe*1e3:.2f} mm) not <= {threshold*1e3:.1f} mm.\n"
+        f"Min SDF: {vals.min()*1e3:.3f} mm — dome floor lip too thin or absent; "
+        "surface-tangency floating-cap artifact will reappear.\n"
+        f"All values (mm): {vals*1e3}"
+    )
+
+
+def test_dome_supported_by_face_plate(design):
+    """
+    16 azimuthal probes at the support-ring mid-radius and z = x_chamber_start
+    must all be solid (SDF < 0) in the full assembly SDF.
+
+    Guards against regressions where the dome floor hole is widened past the
+    face-plate inner radius, leaving the dome cap unsupported (floating).
+    """
+    assembly = _build_full_assembly_sdf(design)
+
+    z_probe = float(design.nozzle.x_chamber_start)
+    floor_hole_r = (design.injector.lox_annulus_OD + 4e-3) / 2.0
+    r_ch_inner = float(design.nozzle.r_chamber)
+    r_probe = (floor_hole_r + r_ch_inner) / 2.0
+
+    N = 16
+    angles = [i * 2 * math.pi / N for i in range(N)]
+    xs = np.array([r_probe * math.cos(a) for a in angles])
+    ys = np.array([r_probe * math.sin(a) for a in angles])
+    zs = np.full(N, z_probe)
+
+    vals = assembly(xs, ys, zs)
+    void_count = int(np.sum(vals > 0))
+
+    assert void_count == 0, (
+        f"Support ring void at {void_count}/16 azimuthal points "
+        f"(r={r_probe*1e3:.2f} mm, z={z_probe*1e3:.2f} mm).\n"
+        "Floor hole OD exceeds face-plate inner radius — dome cap will float.\n"
+        f"SDF values (mm): {vals*1e3}"
+    )

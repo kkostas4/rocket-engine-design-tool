@@ -197,6 +197,31 @@ Keep these books/papers handy. When in doubt, cite one of these.
 
 ---
 
+## SDF Surface Tangency — Design Rule
+
+When two components share an **exact boundary plane** (both SDFs = 0 at the
+same z), `smooth_union(0, 0, k)` produces only `−k/4` of solid depth at the
+seam.  With the default `k = 1.5 mm` this is `−0.375 mm` — below the 0.4 mm
+voxel pitch.  Marching cubes renders it as an invisible knife-edge seam;
+Fusion 360 shows the part as floating.
+
+**Fix:** make one component overlap the other by at least 3× voxel pitch
+(≥ 1.2 mm; 2.5 mm used in practice for a 6× margin).  Do **not** increase
+`k` to fix this — a larger blend radius blurs every adjacent surface.
+
+**Applied:** `LoxDome` extends its floor 2.5 mm downstream past
+`x_chamber_start` via `_LOX_DOME_FLOOR_LIP`, overlapping the injector face
+plate.  The assembly SDF at the seam is ≈ −2.5 mm instead of −0.375 mm.
+
+**Test guard:** `test_dome_face_plate_overlap_visible` asserts SDF ≤ −1.5 mm
+at z = x_chamber_start + 1 mm (1 mm downstream, inside the overlap zone).
+Any future geometry change that removes the lip will fail this test before the
+artifact reappears in the mesh.  Note: probing at z_hi − 1 mm does NOT work
+because extending z_hi_extended also shifts z_cav_hi = z_hi_extended − wall_t,
+leaving only 0.5 mm of floor above the cavity at that probe point.
+
+---
+
 ## What Goes Where (Quick Reference for Subagents)
 
 When in doubt about which folder a new file belongs in:

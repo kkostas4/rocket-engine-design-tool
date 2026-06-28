@@ -59,6 +59,13 @@ if TYPE_CHECKING:
 # Source: Huzel & Huang (1992) §4.2 — typical face plate sizing.
 _FACE_THICKNESS: float = 8e-3
 
+# Dome floor extends this far downstream past x_chamber_start to overlap the face
+# plate and avoid a surface-tangency artifact in smooth_union.  When the dome and
+# face plate share an exact boundary plane, smooth_union(0, 0, k) = -k/4 ≈ -0.375 mm,
+# which is sub-voxel at 0.4 mm pitch and renders as an invisible seam.  A 2.5 mm
+# lip gives ≈ -2.5 mm SDF at the seam — 6× the voxel pitch.
+_LOX_DOME_FLOOR_LIP: float = 2.5e-3
+
 # Radial offset from the LOX annulus OD to the fuel orifice centreline [m].
 # Positions the orifice just outside the LOX annulus gap.
 # Source: NASA SP-8089 (1976) §4.2.
@@ -180,6 +187,7 @@ class LoxDome(Component, Renderable):
         z_lo = z_hi - dome_height
         return {
             "z_lo": z_lo, "z_hi": z_hi,
+            "z_hi_extended": z_hi + _LOX_DOME_FLOOR_LIP,
             "r_inner": r_inner, "r_outer": r_outer,
             "dome_height": dome_height,
         }
@@ -200,11 +208,13 @@ class LoxDome(Component, Renderable):
         # OD is widened by 4 mm (2 mm on each side) so the annular slot at
         # the dome floor is at least 2 mm radially — well above the 0.4 mm
         # voxel resolution used for rendering.
+        # Length covers the full dome height plus the downstream floor lip so
+        # the passage cuts through the extended solid all the way to z_hi_extended.
         return cylindrical_boss_sdf(
             axis_origin=(0.0, 0.0, g["z_lo"]),
             axis_direction=(0.0, 0.0, 1.0),
             OD=self.injector.lox_annulus_OD + 4e-3,
-            length=g["dome_height"],
+            length=g["dome_height"] + _LOX_DOME_FLOOR_LIP,
         )
 
     def to_sdf(self, **context: Any) -> "SDF":
@@ -216,7 +226,7 @@ class LoxDome(Component, Renderable):
             r_inner=g["r_inner"],
             r_outer=g["r_outer"],
             z_lo=g["z_lo"],
-            z_hi=g["z_hi"],
+            z_hi=g["z_hi_extended"],  # 2.5 mm lip into face plate
             wall_thickness=t,
         )
         boss_OD = cfg.lox_dome_inlet_OD
@@ -236,7 +246,7 @@ class LoxDome(Component, Renderable):
         r = g["r_outer"]
         return (
             np.array([-r, -r, g["z_lo"] - self.config.boss_protrusion]),
-            np.array([r, r, g["z_hi"]]),
+            np.array([r, r, g["z_hi_extended"]]),
         )
 
     def verify(self, am_rules: "AMRules | None" = None) -> VerificationReport:
