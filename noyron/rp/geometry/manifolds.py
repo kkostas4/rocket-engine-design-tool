@@ -372,6 +372,7 @@ class FuelManifold(Component, Renderable):
         )
         boss_OD = cfg.fuel_manifold_inlet_OD
         boss_inner_OD = boss_OD - 2.0 * t
+        bore_ext = t + 2e-3
         boss = cylindrical_boss_sdf(
             axis_origin=(g["r_outer"], 0.0, g["z_ctr"]),
             axis_direction=(1.0, 0.0, 0.0),
@@ -379,10 +380,22 @@ class FuelManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
+        union = smooth_union(shell, boss, k=blend.boss_to_manifold)
+        # The boss bore only penetrates the boss protrusion (t ≥ 0).  The
+        # outer manifold wall (t ∈ [−bore_ext, 0]) is a separate SDF domain
+        # (annular_shell_sdf) and is not cut by the boss bore alone.  Subtract
+        # a bore-diameter cylinder that starts bore_ext inside the manifold and
+        # extends to the boss tip, carving continuously through wall + boss.
+        bore_void = cylindrical_boss_sdf(
+            axis_origin=(g["r_outer"] - bore_ext, 0.0, g["z_ctr"]),
+            axis_direction=(1.0, 0.0, 0.0),
+            OD=boss_inner_OD if boss_inner_OD > 1e-9 else boss_OD * 0.5,
+            length=bore_ext + cfg.boss_protrusion,
+        )
         # Fuel radial passages are NOT subtracted here; they span across both
         # this shell and the injector face plate.  Subtraction happens at the
         # engine assembly level so both materials are cut simultaneously.
-        return smooth_union(shell, boss, k=blend.boss_to_manifold)
+        return difference(union, bore_void)
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -492,6 +505,7 @@ class CoolantOutletManifold(Component, Renderable):
         )
         boss_OD = cfg.coolant_manifold_inlet_OD
         boss_inner_OD = boss_OD - 2.0 * t
+        bore_ext = t + 2e-3
         boss = cylindrical_boss_sdf(
             axis_origin=(0.0, g["r_outer"], g["z_ctr"]),
             axis_direction=(0.0, 1.0, 0.0),
@@ -499,8 +513,14 @@ class CoolantOutletManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return difference(smooth_union(shell, boss, k=blend.boss_to_manifold),
-                          self.flow_path_sdf())
+        union = smooth_union(shell, boss, k=blend.boss_to_manifold)
+        bore_void = cylindrical_boss_sdf(
+            axis_origin=(0.0, g["r_outer"] - bore_ext, g["z_ctr"]),
+            axis_direction=(0.0, 1.0, 0.0),
+            OD=boss_inner_OD if boss_inner_OD > 1e-9 else boss_OD * 0.5,
+            length=bore_ext + cfg.boss_protrusion,
+        )
+        return difference(difference(union, bore_void), self.flow_path_sdf())
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()
@@ -608,6 +628,7 @@ class CoolantInletManifold(Component, Renderable):
         )
         boss_OD = cfg.coolant_manifold_inlet_OD
         boss_inner_OD = boss_OD - 2.0 * t
+        bore_ext = t + 2e-3
         boss = cylindrical_boss_sdf(
             axis_origin=(0.0, g["r_outer"], g["z_ctr"]),
             axis_direction=(0.0, 1.0, 0.0),
@@ -615,8 +636,14 @@ class CoolantInletManifold(Component, Renderable):
             length=cfg.boss_protrusion,
             inner_OD=boss_inner_OD if boss_inner_OD > 1e-9 else None,
         )
-        return difference(smooth_union(shell, boss, k=blend.boss_to_manifold),
-                          self.flow_path_sdf())
+        union = smooth_union(shell, boss, k=blend.boss_to_manifold)
+        bore_void = cylindrical_boss_sdf(
+            axis_origin=(0.0, g["r_outer"] - bore_ext, g["z_ctr"]),
+            axis_direction=(0.0, 1.0, 0.0),
+            OD=boss_inner_OD if boss_inner_OD > 1e-9 else boss_OD * 0.5,
+            length=bore_ext + cfg.boss_protrusion,
+        )
+        return difference(difference(union, bore_void), self.flow_path_sdf())
 
     def bbox(self, **context: Any) -> tuple[np.ndarray, np.ndarray]:
         g = self._geom()

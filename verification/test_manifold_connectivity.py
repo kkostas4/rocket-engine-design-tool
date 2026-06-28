@@ -384,3 +384,125 @@ def test_fuel_flow_path_actually_cuts_metal(design):
         f"z={z_mid*1e3:.1f} mm, r range: [{r_inner_probe*1e3:.2f}, {r_outer_probe*1e3:.2f}] mm\n"
         f"SDF values: {vals}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests 8–11: Boss bore penetrates manifold outer wall into cavity
+# ---------------------------------------------------------------------------
+#
+# For each radial boss (FuelManifold, CoolantOutlet, CoolantInlet) and the
+# axial boss (LoxDome), probe four points along the boss bore axis:
+#   A – inside the boss protrusion (clearly void in all designs)
+#   B – at the boss/wall junction (manifold outer surface)
+#   C – 2 mm inside the manifold wall
+#   D – 7 mm inside (well into the cavity)
+# All four must report SDF > −1e-9 (void or on-surface).  The critical
+# assertion is C: negative here means the bore did not penetrate the wall.
+#
+# Probe offset: 0.5 mm perpendicular to the bore axis to sit inside the
+# bore (inner bore radius = 1 mm for 10 mm boss OD with 4 mm wall).
+#
+# Source: verified in Fusion 360 section view — bore must be continuous
+# from outside the engine through the manifold wall into the cavity.
+
+
+def _assert_bore_penetrates(sdf, points_abcd: list[tuple[str, float, float, float]]) -> None:
+    """Assert all four ABCD points along boss bore axis are void (SDF > -tol)."""
+    tol = 1e-9
+    for label, x, y, z in points_abcd:
+        v = float(sdf(np.array([x]), np.array([y]), np.array([z]))[0])
+        assert v > -tol, (
+            f"Boss bore not void at point {label} "
+            f"({x*1e3:.2f}, {y*1e3:.2f}, {z*1e3:.2f}) mm: SDF={v*1e3:.3f} mm "
+            f"(negative = solid wall blocking bore)."
+        )
+
+
+def test_lox_dome_boss_bore_reaches_cavity(design):
+    """
+    The LoxDome axial boss bore (OD 12 mm, bore ID 4 mm) must be continuously
+    void from the boss tip through the z_lo face and into the dome interior.
+    Probed along the bore axis at r = 1 mm (inside bore inner radius of 2 mm).
+    """
+    cfg = ManifoldConfig()
+    dome = LoxDome(nozzle=design.nozzle, bilayer=design.bilayer,
+                   injector=design.injector, config=cfg)
+    sdf = dome.to_sdf()
+    g = dome._geom()
+    z_lo = g["z_lo"]
+    bp = cfg.boss_protrusion
+    px = 0.001  # 1 mm — inside bore inner radius of 2 mm
+
+    _assert_bore_penetrates(sdf, [
+        ("A boss_tip",    px, 0.0, z_lo - bp + 0.001),
+        ("B junction",    px, 0.0, z_lo),
+        ("C 2mm in wall", px, 0.0, z_lo + 0.002),
+        ("D 7mm in",      px, 0.0, z_lo + 0.007),
+    ])
+
+
+def test_fuel_manifold_boss_bore_reaches_cavity(design):
+    """
+    The FuelManifold radial boss bore (OD 10 mm, bore ID 2 mm) must be void
+    from boss tip through r_outer and 2 mm into the manifold wall.
+    Probed at y = 0.5 mm (inside bore inner radius of 1 mm).
+    """
+    cfg = ManifoldConfig()
+    fm = FuelManifold(nozzle=design.nozzle, bilayer=design.bilayer,
+                      injector=design.injector, config=cfg)
+    sdf = fm.to_sdf()
+    g = fm._geom()
+    r_out = g["r_outer"]
+    bp = cfg.boss_protrusion
+    py = 0.0005  # 0.5 mm inside bore (bore inner radius = 1 mm)
+
+    _assert_bore_penetrates(sdf, [
+        ("A boss_tip",    r_out + bp - 0.001, py, g["z_ctr"]),
+        ("B junction",    r_out,               py, g["z_ctr"]),
+        ("C 2mm in wall", r_out - 0.002,       py, g["z_ctr"]),
+        ("D 7mm in",      r_out - 0.007,       py, g["z_ctr"]),
+    ])
+
+
+def test_coolant_outlet_boss_bore_reaches_cavity(design):
+    """
+    The CoolantOutletManifold radial boss bore must be void from boss tip
+    through r_outer and 2 mm inside the manifold outer wall.
+    Probed at x = 0.5 mm perpendicular to the +y boss axis.
+    """
+    cfg = ManifoldConfig()
+    com = CoolantOutletManifold(nozzle=design.nozzle, bilayer=design.bilayer, config=cfg)
+    sdf = com.to_sdf()
+    g = com._geom()
+    r_out = g["r_outer"]
+    bp = cfg.boss_protrusion
+    px = 0.0005  # 0.5 mm inside bore (bore inner radius = 1 mm)
+
+    _assert_bore_penetrates(sdf, [
+        ("A boss_tip",    px, r_out + bp - 0.001, g["z_ctr"]),
+        ("B junction",    px, r_out,               g["z_ctr"]),
+        ("C 2mm in wall", px, r_out - 0.002,       g["z_ctr"]),
+        ("D 7mm in",      px, r_out - 0.007,       g["z_ctr"]),
+    ])
+
+
+def test_coolant_inlet_boss_bore_reaches_cavity(design):
+    """
+    The CoolantInletManifold radial boss bore must be void from boss tip
+    through r_outer and 2 mm inside the manifold outer wall.
+    Probed at x = 0.5 mm perpendicular to the +y boss axis.
+    """
+    cfg = ManifoldConfig()
+    cim = CoolantInletManifold(nozzle=design.nozzle, bilayer=design.bilayer, config=cfg)
+    sdf = cim.to_sdf()
+    g = cim._geom()
+    r_out = g["r_outer"]
+    bp = cfg.boss_protrusion
+    px = 0.0005  # 0.5 mm inside bore (bore inner radius = 1 mm)
+
+    _assert_bore_penetrates(sdf, [
+        ("A boss_tip",    px, r_out + bp - 0.001, g["z_ctr"]),
+        ("B junction",    px, r_out,               g["z_ctr"]),
+        ("C 2mm in wall", px, r_out - 0.002,       g["z_ctr"]),
+        ("D 7mm in",      px, r_out - 0.007,       g["z_ctr"]),
+    ])
