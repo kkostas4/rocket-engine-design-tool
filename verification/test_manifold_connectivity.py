@@ -509,48 +509,54 @@ def test_coolant_inlet_boss_bore_reaches_cavity(design):
 
 
 # ---------------------------------------------------------------------------
-# Tests 12–13: LOX dome floor overlaps face plate — no floating-cap artifact
+# Tests 12–14: LOX dome floor overlaps face plate; outer wall reaches jacket
 # ---------------------------------------------------------------------------
 #
-# The dome floor extends _LOX_DOME_FLOOR_LIP = 2.5 mm downstream past
-# x_chamber_start to overlap the face plate.  Without this lip both surfaces
-# share the same boundary plane and smooth_union(0, 0, k=1.5 mm) = -k/4 =
-# -0.375 mm < 0.4 mm voxel pitch → invisible seam in marching cubes output.
+# The dome shell extends _LOX_DOME_TO_JACKET_OVERLAP = 8 mm downstream past
+# x_chamber_start.  This equals the injector face plate thickness (_FACE_THICKNESS),
+# so the dome outer cylindrical wall (r > r_chamber) reaches exactly the upstream
+# face of the chamber jacket (which is trimmed 8 mm by engine_assembly_sdf).
+# Without this 8 mm overlap the dome outer wall ends at x_chamber_start + 2.5 mm
+# while the jacket starts at x_chamber_start + 8 mm, leaving a 5.5 mm axial void
+# at r > r_chamber that Fusion 360 renders as a floating dome.
 #
-# Test 12 checks the SDF depth at z = x_chamber_start - 1 mm (1 mm above
-# the original contact plane, inside the dome floor).  Without the lip the
-# dome shell SDF there is -1.0 mm (surface-to-void distance only 1 voxel).
-# With the lip the shell extends 2.5 mm further so the SDF is ~-3 mm —
-# well above the 1.5 mm threshold.
+# Test 12 checks the SDF depth in the dome-floor / face-plate overlap zone
+# (z = x_chamber_start + 5 mm, inside the dome floor solid region).
+# With the 8 mm extension z_cav_hi = x_chamber_start + 4 mm, so z + 5 mm
+# is in the jointly-solid floor zone; both dome floor and face plate contribute.
 #
 # Test 13 checks that 16 azimuthal probes at the support-ring mid-radius and
-# z = x_chamber_start all remain solid.  This guards against a future
-# regression where the floor hole is widened past the face-plate inner radius.
+# z = x_chamber_start all remain solid.  Guards against floor-hole regressions.
+#
+# Test 14 checks the outer wall connection: 16 points on a circle at r = r_outer
+# (dome jacket OD) and z = x_chamber_start + 4 mm (midway in the 8 mm overlap)
+# must all be solid in the full assembly SDF.  This is the coordinate that
+# Fusion 360 showed as a void gap before the 8 mm fix.
 
 
 def test_dome_face_plate_overlap_visible(design):
     """
-    Assembly SDF inside the dome-floor overlap zone must be ≤ -1.5 mm
-    (3.75× voxel pitch) so the dome-to-face-plate joint renders in marching
-    cubes.
+    Assembly SDF inside the dome-floor / face-plate overlap zone must be
+    <= -1.5 mm (3.75x voxel pitch) so the joint renders in marching cubes.
 
-    Probe at z = x_chamber_start + 1 mm (1 mm downstream, inside the 2.5 mm
-    lip that overlaps the face plate) at the support-ring mid-radius.
-    Without the dome lip the dome SDF here is +1.0 mm (void — dome ends at
-    x_chamber_start), so smooth_union with the face plate gives only ≈ -1.0 mm.
-    With the lip the dome SDF is -1.5 mm and smooth_union gives ≈ -1.7 mm.
+    With _LOX_DOME_TO_JACKET_OVERLAP = 8 mm, z_cav_hi = x_chamber_start + 4 mm
+    (z_hi_extended - wall_t = (z_hi + 8 mm) - 4 mm).  The dome floor is solid
+    from z_cav_hi to z_hi_extended, so probe at z = x_chamber_start + 5 mm
+    (1 mm inside the floor solid zone, 3 mm from the floor ceiling).  Both
+    the dome floor (SDF ~ -1 mm) and face plate (SDF ~ -2.3 mm) are solid here;
+    smooth_union gives ~ -2.3 mm, well above the -1.5 mm threshold.
 
-    Note: probe at z_hi + 1 mm, NOT z_hi - 1 mm — extending z_hi_extended
-    also shifts z_cav_hi = z_hi_extended - wall_t closer to z_hi, so the
-    dome SDF 1 mm above the old contact plane is cavity-limited to -0.5 mm.
-    The overlap zone is downstream of x_chamber_start, not upstream.
+    Note: probing at z_hi + 1 mm fails with the 8 mm extension because that z
+    is inside the dome cavity (z_cav_hi = z_hi + 4 mm > z_hi + 1 mm), so the
+    dome SDF is positive and smooth_union with the face plate gives only -1.0 mm.
+    Always probe in the dome FLOOR solid zone (z > z_cav_hi), not in the cavity.
     """
     assembly = _build_full_assembly_sdf(design)
     dome = LoxDome(nozzle=design.nozzle, bilayer=design.bilayer,
                    injector=design.injector)
     g = dome._geom()
 
-    z_probe = g["z_hi"] + 1e-3  # 1 mm downstream, inside the overlap zone
+    z_probe = g["z_hi"] + 5e-3  # 5 mm downstream, inside dome floor solid zone
     floor_hole_r = (design.injector.lox_annulus_OD + 4e-3) / 2.0
     r_ch_inner = float(design.nozzle.r_chamber)
     r_probe = (floor_hole_r + r_ch_inner) / 2.0  # support-ring mid-radius
@@ -565,10 +571,10 @@ def test_dome_face_plate_overlap_visible(design):
     threshold = -1.5e-3  # ≤ -1.5 mm required
 
     assert np.all(vals <= threshold), (
-        f"Assembly SDF in dome-face-plate overlap zone (r={r_probe*1e3:.2f} mm, "
+        f"Assembly SDF in dome-floor/face-plate overlap zone (r={r_probe*1e3:.2f} mm, "
         f"z={z_probe*1e3:.2f} mm) not <= {threshold*1e3:.1f} mm.\n"
-        f"Min SDF: {vals.min()*1e3:.3f} mm — dome floor lip too thin or absent; "
-        "surface-tangency floating-cap artifact will reappear.\n"
+        f"Min SDF: {vals.min()*1e3:.3f} mm — _LOX_DOME_TO_JACKET_OVERLAP too small "
+        "or dome floor cavity extends past probe z; floating-cap artifact will reappear.\n"
         f"All values (mm): {vals*1e3}"
     )
 
@@ -601,5 +607,58 @@ def test_dome_supported_by_face_plate(design):
         f"Support ring void at {void_count}/16 azimuthal points "
         f"(r={r_probe*1e3:.2f} mm, z={z_probe*1e3:.2f} mm).\n"
         "Floor hole OD exceeds face-plate inner radius — dome cap will float.\n"
+        f"SDF values (mm): {vals*1e3}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 14: LOX dome outer wall connects to chamber jacket — no outer-band void
+# ---------------------------------------------------------------------------
+#
+# The dome outer cylindrical wall sits at r = r_outer_chamber > r_chamber.
+# The face plate only reaches r_chamber, so at r > r_chamber the only
+# material connection between dome and jacket is via the dome outer wall itself.
+# The chamber jacket is trimmed 8 mm downstream (engine_assembly_sdf._L_trimmed),
+# so the dome outer wall must extend at least 8 mm past x_chamber_start to
+# bridge the gap.  _LOX_DOME_TO_JACKET_OVERLAP = 8 mm closes this exactly.
+#
+# Probe: 16 points on a circle at r = r_outer - 1 mm (1 mm inside the outer
+# wall, clear of the SDF=0 outer surface) at z = x_chamber_start + 4 mm
+# (midpoint of the 8 mm overlap zone, 4 mm from each end).
+# All 16 must be solid (SDF < 0) in the full assembly SDF.
+# Before the fix (2.5 mm extension) all 16 were void (+1.5 mm).
+
+
+def test_dome_outer_wall_connects_to_jacket(design):
+    """
+    16 azimuthal probes at r = dome_r_outer - 1 mm, z = x_chamber_start + 4 mm
+    must all be solid (SDF < 0) in the full assembly SDF.
+
+    This is the outer radial band (r > r_chamber) where the dome outer wall
+    is the only material connecting dome to chamber jacket.  Before the
+    8 mm extension this band was a 5.5 mm axial void visible in Fusion 360.
+    """
+    assembly = _build_full_assembly_sdf(design)
+    dome = LoxDome(nozzle=design.nozzle, bilayer=design.bilayer,
+                   injector=design.injector)
+    g = dome._geom()
+
+    r_probe = g["r_outer"] - 1e-3  # 1 mm inside outer wall surface
+    z_probe = float(design.nozzle.x_chamber_start) + 4e-3  # mid of 8 mm overlap
+
+    N = 16
+    angles = np.linspace(0, 2 * math.pi, N, endpoint=False)
+    xs = r_probe * np.cos(angles)
+    ys = r_probe * np.sin(angles)
+    zs = np.full(N, z_probe)
+
+    vals = assembly(xs, ys, zs)
+    void_count = int(np.sum(vals >= 0))
+
+    assert void_count == 0, (
+        f"Dome outer wall disconnected from jacket: {void_count}/16 points void "
+        f"at r={r_probe*1e3:.2f} mm, z={z_probe*1e3:.2f} mm.\n"
+        "Increase _LOX_DOME_TO_JACKET_OVERLAP to >= 8 mm (_FACE_THICKNESS) "
+        "to close the axial void at r > r_chamber.\n"
         f"SDF values (mm): {vals*1e3}"
     )

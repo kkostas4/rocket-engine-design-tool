@@ -59,12 +59,14 @@ if TYPE_CHECKING:
 # Source: Huzel & Huang (1992) §4.2 — typical face plate sizing.
 _FACE_THICKNESS: float = 8e-3
 
-# Dome floor extends this far downstream past x_chamber_start to overlap the face
-# plate and avoid a surface-tangency artifact in smooth_union.  When the dome and
-# face plate share an exact boundary plane, smooth_union(0, 0, k) = -k/4 ≈ -0.375 mm,
-# which is sub-voxel at 0.4 mm pitch and renders as an invisible seam.  A 2.5 mm
-# lip gives ≈ -2.5 mm SDF at the seam — 6× the voxel pitch.
-_LOX_DOME_FLOOR_LIP: float = 2.5e-3
+# The dome shell extends this far downstream past x_chamber_start to reach the
+# chamber jacket's upstream face, which is trimmed 8 mm downstream by
+# engine_assembly_sdf._L_trimmed to make room for the injector face plate.
+# Without this overlap the dome outer cylindrical wall (r > r_chamber) ends at
+# x_chamber_start + 2.5 mm while the jacket starts at x_chamber_start + 8 mm,
+# leaving a 5.5 mm axial void at the outer radial band that Fusion 360 renders
+# as a floating dome.  8 mm = _FACE_THICKNESS closes the gap exactly.
+_LOX_DOME_TO_JACKET_OVERLAP: float = 8e-3
 
 # Radial offset from the LOX annulus OD to the fuel orifice centreline [m].
 # Positions the orifice just outside the LOX annulus gap.
@@ -187,7 +189,7 @@ class LoxDome(Component, Renderable):
         z_lo = z_hi - dome_height
         return {
             "z_lo": z_lo, "z_hi": z_hi,
-            "z_hi_extended": z_hi + _LOX_DOME_FLOOR_LIP,
+            "z_hi_extended": z_hi + _LOX_DOME_TO_JACKET_OVERLAP,
             "r_inner": r_inner, "r_outer": r_outer,
             "dome_height": dome_height,
         }
@@ -214,7 +216,7 @@ class LoxDome(Component, Renderable):
             axis_origin=(0.0, 0.0, g["z_lo"]),
             axis_direction=(0.0, 0.0, 1.0),
             OD=self.injector.lox_annulus_OD + 4e-3,
-            length=g["dome_height"] + _LOX_DOME_FLOOR_LIP,
+            length=g["dome_height"] + _LOX_DOME_TO_JACKET_OVERLAP,
         )
 
     def to_sdf(self, **context: Any) -> "SDF":
@@ -226,7 +228,7 @@ class LoxDome(Component, Renderable):
             r_inner=g["r_inner"],
             r_outer=g["r_outer"],
             z_lo=g["z_lo"],
-            z_hi=g["z_hi_extended"],  # 2.5 mm lip into face plate
+            z_hi=g["z_hi_extended"],  # 8 mm overlap reaches chamber jacket upstream face
             wall_thickness=t,
         )
         boss_OD = cfg.lox_dome_inlet_OD

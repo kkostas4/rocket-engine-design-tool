@@ -209,16 +209,27 @@ Fusion 360 shows the part as floating.
 (≥ 1.2 mm; 2.5 mm used in practice for a 6× margin).  Do **not** increase
 `k` to fix this — a larger blend radius blurs every adjacent surface.
 
-**Applied:** `LoxDome` extends its floor 2.5 mm downstream past
-`x_chamber_start` via `_LOX_DOME_FLOOR_LIP`, overlapping the injector face
-plate.  The assembly SDF at the seam is ≈ −2.5 mm instead of −0.375 mm.
+**Applied:** `LoxDome` extends its shell 8 mm downstream past `x_chamber_start`
+via `_LOX_DOME_TO_JACKET_OVERLAP = 8 mm` (= `_FACE_THICKNESS`).  This reaches
+the chamber jacket's upstream face (which is trimmed 8 mm by
+`engine_assembly_sdf._L_trimmed`), closing the 5.5 mm axial void at
+r > r_chamber that was left by the earlier 2.5 mm floor-only fix.
 
-**Test guard:** `test_dome_face_plate_overlap_visible` asserts SDF ≤ −1.5 mm
-at z = x_chamber_start + 1 mm (1 mm downstream, inside the overlap zone).
-Any future geometry change that removes the lip will fail this test before the
-artifact reappears in the mesh.  Note: probing at z_hi − 1 mm does NOT work
-because extending z_hi_extended also shifts z_cav_hi = z_hi_extended − wall_t,
-leaving only 0.5 mm of floor above the cavity at that probe point.
+**Test guards:**
+- `test_dome_face_plate_overlap_visible` asserts SDF ≤ −1.5 mm at
+  z = x_chamber_start + 5 mm (inside the dome floor solid zone).  Probe must be
+  in the jointly-solid region (z > z_cav_hi = z_hi_extended − wall_t); probing
+  in the cavity zone (z < z_cav_hi) fails because the dome SDF is positive there.
+- `test_dome_outer_wall_connects_to_jacket` asserts 16 azimuthal points at
+  r = r_outer − 1 mm, z = x_chamber_start + 4 mm are all solid.  This is the
+  exact coordinate band that Fusion 360 showed as void before the 8 mm fix.
+
+**Interface continuity lesson:** Tests must sample at the *visible failure
+coordinates* (radial band, axial range) not just near the seam.  When debugging
+"X floats in CAD," identify the gap's r and z range from the SDF diagnostic,
+then assert SDF < 0 specifically there.  The 2.5 mm floor-lip fix (a68bafb)
+passed all inner-band tests while the outer-band void remained visible because
+no test sampled at r > r_chamber.  See commits a68bafb and this commit.
 
 ---
 
