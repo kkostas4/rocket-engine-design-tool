@@ -88,6 +88,7 @@ def design():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="LOX dome removed pending redesign")
 def test_lox_dome_connects_to_annulus(design):
     """
     Sample the LoxDome SDF along a path from well inside the dome cavity
@@ -308,6 +309,7 @@ def test_no_obvious_leaks(design):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="LOX dome removed pending redesign")
 def test_lox_dome_floor_hole_resolvable_at_0_4mm(design):
     """
     The LOX dome floor passage must be radially wider than 1.0 mm so that
@@ -418,6 +420,7 @@ def _assert_bore_penetrates(sdf, points_abcd: list[tuple[str, float, float, floa
         )
 
 
+@pytest.mark.skip(reason="LOX dome removed pending redesign")
 def test_lox_dome_boss_bore_reaches_cavity(design):
     """
     The LoxDome axial boss bore (OD 12 mm, bore ID 4 mm) must be continuously
@@ -534,6 +537,7 @@ def test_coolant_inlet_boss_bore_reaches_cavity(design):
 # Fusion 360 showed as a void gap before the 8 mm fix.
 
 
+@pytest.mark.skip(reason="LOX dome removed pending redesign")
 def test_dome_face_plate_overlap_visible(design):
     """
     Assembly SDF inside the dome-floor / face-plate overlap zone must be
@@ -579,6 +583,7 @@ def test_dome_face_plate_overlap_visible(design):
     )
 
 
+@pytest.mark.skip(reason="LOX dome removed pending redesign")
 def test_dome_supported_by_face_plate(design):
     """
     16 azimuthal probes at the support-ring mid-radius and z = x_chamber_start
@@ -629,6 +634,7 @@ def test_dome_supported_by_face_plate(design):
 # Before the fix (2.5 mm extension) all 16 were void (+1.5 mm).
 
 
+@pytest.mark.skip(reason="LOX dome removed pending redesign")
 def test_dome_outer_wall_connects_to_jacket(design):
     """
     16 azimuthal probes at r = dome_r_outer - 1 mm, z = x_chamber_start + 4 mm
@@ -660,5 +666,63 @@ def test_dome_outer_wall_connects_to_jacket(design):
         f"at r={r_probe*1e3:.2f} mm, z={z_probe*1e3:.2f} mm.\n"
         "Increase _LOX_DOME_TO_JACKET_OVERLAP to >= 8 mm (_FACE_THICKNESS) "
         "to close the axial void at r > r_chamber.\n"
+        f"SDF values (mm): {vals*1e3}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 15: CoolantInletManifold overlaps jacket at nozzle exit
+# ---------------------------------------------------------------------------
+#
+# CoolantInletManifold._geom() sets r_inner = _r_outer_exit - 2 mm so the
+# manifold inner wall physically penetrates the jacket outer surface.
+#
+# The overlap is tested in the manifold's axial bottom-cap zone, which is
+# the geometrically unambiguous region: with new r_inner the cap ring shifts
+# inward so that r = jacket_r_outer + 3 mm sits INSIDE the cap ring
+# (r > r_cav_inner = jacket_r_outer + 2 mm) and is not voided by
+# flow_path_sdf.  Before the fix r_cav_inner was jacket_r_outer + 4 mm so
+# the same probe was inside the flow_path void (→ void).
+#
+# Probe: 8 azimuthal points at r = jacket_r_outer + 3 mm,
+#        z = x_exit - 8 mm (= z_lo + 2 mm, inside the 4 mm bottom cap zone).
+# All 8 must report assembly SDF < 0 (solid, manifold cap ring material).
+
+
+def test_coolant_inlet_overlaps_jacket_at_nozzle_exit(design):
+    """
+    Assembly SDF at 8 azimuthal points inside the manifold bottom-cap ring
+    must be negative (solid), confirming the 2 mm inward overlap moved the
+    cap ring within reach of the jacket outer surface.
+    """
+    from noyron.rp.geometry.manifolds import _r_outer_exit
+
+    assembly = _build_full_assembly_sdf(design)
+    jacket_r_outer = _r_outer_exit(design.nozzle, design.bilayer)
+
+    cfg = ManifoldConfig()
+    half_ext = cfg.coolant_manifold_axial_extent / 2.0
+    z_lo = float(design.nozzle.x_exit) - half_ext
+    z_probe = z_lo + 2e-3  # 2 mm inside the 4 mm bottom cap zone
+
+    # 3 mm outside jacket = 1 mm past r_cav_inner = jacket_r_outer + 2 mm
+    # (outside the flow_path void; inside the solid cap ring).
+    r_probe = jacket_r_outer + 3e-3
+
+    N = 8
+    angles = np.linspace(0.0, 2.0 * math.pi, N, endpoint=False)
+    xs = r_probe * np.cos(angles)
+    ys = r_probe * np.sin(angles)
+    zs = np.full(N, z_probe)
+
+    vals = assembly(xs, ys, zs)
+    void_count = int(np.sum(vals >= 0))
+
+    assert void_count == 0, (
+        f"Coolant inlet manifold cap ring not solid at nozzle exit zone: "
+        f"{void_count}/8 points not solid "
+        f"(r={r_probe*1e3:.2f} mm, z={z_probe*1e3:.2f} mm).\n"
+        "CoolantInletManifold r_inner must equal _r_outer_exit - 2e-3 so "
+        "r_cav_inner = jacket_r_outer + 2 mm (not +4 mm).\n"
         f"SDF values (mm): {vals*1e3}"
     )

@@ -920,13 +920,15 @@ class Engine:
         # ------------------------------------------------------------------
         from noyron.rp.geometry.manifolds import (
             ManifoldConfig,
-            LoxDome,
             FuelManifold,
             CoolantOutletManifold,
             CoolantInletManifold,
         )
         _cfg = ManifoldConfig()
-        _lox_dome = LoxDome(nozzle=nozzle, bilayer=bilayer, injector=injector, config=_cfg)
+        # LoxDome removed pending redesign — was persistently floating
+        # in rendered STL despite fixes at commits a68bafb, 3014beb.
+        # See conversation trail for details.
+        # _lox_dome = LoxDome(nozzle=nozzle, bilayer=bilayer, injector=injector, config=_cfg)
         _fuel_mfld = FuelManifold(nozzle=nozzle, bilayer=bilayer, injector=injector, config=_cfg)
         _cool_out = CoolantOutletManifold(nozzle=nozzle, bilayer=bilayer, config=_cfg)
         _cool_in = CoolantInletManifold(nozzle=nozzle, bilayer=bilayer, config=_cfg)
@@ -941,7 +943,7 @@ class Engine:
             regen_solution=regen_solution,
             structural=structural,
             lcf=lcf,
-            lox_dome=_lox_dome,
+            lox_dome=None,
             fuel_manifold=_fuel_mfld,
             coolant_outlet_manifold=_cool_out,
             coolant_inlet_manifold=_cool_in,

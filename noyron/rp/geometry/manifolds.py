@@ -596,7 +596,10 @@ class CoolantInletManifold(Component, Renderable):
 
     def _geom(self) -> dict:
         cfg = self.config
-        r_inner = _r_outer_exit(self.nozzle, self.bilayer)
+        # Overlap jacket outer radius by 2 mm so the manifold inner wall
+        # intersects jacket material, ensuring continuous solid at the
+        # coolant channel inlets (5x voxel pitch at 0.4 mm resolution).
+        r_inner = _r_outer_exit(self.nozzle, self.bilayer) - 2e-3
         r_outer = r_inner + cfg.coolant_manifold_radial_width
         half = cfg.coolant_manifold_axial_extent / 2.0
         z_ctr = float(self.nozzle.x_exit)

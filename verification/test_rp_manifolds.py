@@ -167,6 +167,7 @@ class TestKernelPrimitivesIsolation:
 
 
 class TestManifoldPlacement:
+    @pytest.mark.skip(reason="LOX dome removed pending redesign")
     def test_lox_dome_above_face_plate(self, all_manifolds, reference_nozzle):
         """LOX dome bbox z_max aligns with face plate z (x_chamber_start)."""
         dome = all_manifolds["lox_dome"]
@@ -320,15 +321,15 @@ class TestExistingDesignScalars:
         # c* plausible range for methalox at Pc = 6.9 MPa, OF = 3.6
         assert 1800 < design.gas.c_star < 2000
 
-        # All manifolds must be present
-        assert design.lox_dome is not None, "LoxDome missing from EngineDesign"
+        # LoxDome removed pending redesign — expected absent (see engine.py step 10).
+        assert design.lox_dome is None, "LoxDome should be None (removed pending redesign)"
         assert design.fuel_manifold is not None, "FuelManifold missing from EngineDesign"
         assert design.coolant_outlet_manifold is not None, "CoolantOutletManifold missing"
         assert design.coolant_inlet_manifold is not None, "CoolantInletManifold missing"
 
-        # verify_all() must include all four manifolds
+        # verify_all() must include the three remaining manifolds
         reports = design.verify_all()
-        assert "LoxDome" in reports
+        assert "LoxDome" not in reports
         assert "FuelManifold" in reports
         assert "CoolantOutletManifold" in reports
         assert "CoolantInletManifold" in reports
