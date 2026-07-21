@@ -310,7 +310,11 @@ class FuelManifold(Component, Renderable):
 
     def _geom(self) -> dict:
         cfg = self.config
-        r_inner = _r_outer_chamber(self.nozzle, self.bilayer)
+        # Overlap jacket outer radius by 8 mm (20x voxel pitch at 0.4 mm) to
+        # guarantee visible material connection in the rendered mesh across a
+        # range of voxel resolutions.  This is aggressive intentionally —
+        # smaller overlaps kept producing subtly-floating artifacts in Fusion 360.
+        r_inner = _r_outer_chamber(self.nozzle, self.bilayer) - 8e-3
         r_outer = r_inner + cfg.fuel_manifold_radial_width
         z_hi = float(self.nozzle.x_chamber_start)
         z_lo = z_hi - cfg.coolant_manifold_axial_extent
@@ -471,7 +475,11 @@ class CoolantOutletManifold(Component, Renderable):
 
     def _geom(self) -> dict:
         cfg = self.config
-        r_inner = _r_outer_chamber(self.nozzle, self.bilayer)
+        # Overlap jacket outer radius by 8 mm (20x voxel pitch at 0.4 mm) to
+        # guarantee visible material connection in the rendered mesh across a
+        # range of voxel resolutions.  This is aggressive intentionally —
+        # smaller overlaps kept producing subtly-floating artifacts in Fusion 360.
+        r_inner = _r_outer_chamber(self.nozzle, self.bilayer) - 8e-3
         r_outer = r_inner + cfg.coolant_manifold_radial_width
         z_lo = float(self.nozzle.x_chamber_start)
         z_hi = z_lo + cfg.coolant_manifold_axial_extent
@@ -596,10 +604,12 @@ class CoolantInletManifold(Component, Renderable):
 
     def _geom(self) -> dict:
         cfg = self.config
-        # Overlap jacket outer radius by 2 mm so the manifold inner wall
-        # intersects jacket material, ensuring continuous solid at the
-        # coolant channel inlets (5x voxel pitch at 0.4 mm resolution).
-        r_inner = _r_outer_exit(self.nozzle, self.bilayer) - 2e-3
+        # Overlap jacket outer radius by 8 mm (20x voxel pitch at 0.4 mm) to
+        # guarantee visible material connection in the rendered mesh across a
+        # range of voxel resolutions.  This is aggressive intentionally —
+        # smaller overlaps (2 mm before this fix) kept producing subtly-floating
+        # artifacts in Fusion 360 at the nozzle-exit end.
+        r_inner = _r_outer_exit(self.nozzle, self.bilayer) - 8e-3
         r_outer = r_inner + cfg.coolant_manifold_radial_width
         half = cfg.coolant_manifold_axial_extent / 2.0
         z_ctr = float(self.nozzle.x_exit)
