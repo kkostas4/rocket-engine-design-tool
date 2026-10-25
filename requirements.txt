@@ -1,6 +1,10 @@
 rocketcea>=1.2.3
+CoolProp>=6.6
 numpy>=1.26
 scipy>=1.11
+scikit-image>=0.22
+trimesh>=4.0
+pyyaml>=6.0
 matplotlib>=3.8
 pytest>=8.0
 ruff>=0.4
