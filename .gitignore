@@ -19,3 +19,12 @@ verification/reports/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Rendered geometry (STLs are 100-700 MB; GitHub rejects files >100 MB)
+output/
+
+# Local Claude Code settings
+.claude/
+
+# Logs
+*.log
