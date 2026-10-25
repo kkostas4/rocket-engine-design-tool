@@ -10,15 +10,16 @@ engineering knowledge encoded as code, physics layered on a signed-distance-fiel
 geometry kernel, and geometry that is a consequence of the design rather than
 something drawn by hand. Independent project; not affiliated with LEAP 71.
 
-![Physics along the engine](portfolio_visuals/physics_profiles.png)
+<p align="center">
+  <img src="portfolio_visuals/render.png" height="420" alt="Generated engine geometry for one design case">
+  &nbsp;&nbsp;
+  <img src="portfolio_visuals/print.jpg" height="420" alt="The same geometry as a printed model">
+</p>
+<p align="center"><em>Generated geometry for one design case, and the same geometry as a printed model.</em></p>
 
 ## What it does
 
-```
-requirements ─► thermochemistry (NASA CEA) ─► Rao nozzle ─► pintle injector
-            ─► cooling-channel sizing ─► coupled regenerative-cooling solver
-            ─► structural + low-cycle fatigue ─► SDF geometry ─► STL
-```
+![Pipeline](portfolio_visuals/pipeline.png)
 
 | Stage | Method |
 |---|---|
@@ -36,6 +37,25 @@ Manufacturing is a first-class input: each process (LPBF GRCop-42, LPBF Inconel
 718, binder jet, CNC) is an `AMRules` object, and every component verifies
 itself against the active ruleset. The same engine requirement can pass for one
 process and fail for another.
+
+## Regenerative cooling
+
+The coupled solver marches along the engine axis, converging the gas-side wall
+temperature at each station. Heat flux and wall temperature peak at the throat,
+which is what drives the cooling-channel design.
+
+![Physics along the engine](portfolio_visuals/physics_profiles.png)
+
+## Generated geometry
+
+Cooling channels, manifolds and injector are generated as one continuous flow
+path, so each propellant can be traced from its inlet port to its point of use.
+
+<p align="center">
+  <img src="portfolio_visuals/nozzle-channels.jpg" width="49%" alt="Cooling channels generated around the nozzle">
+  <img src="portfolio_visuals/manifold.jpg" width="49%" alt="Generated manifold and inlet passage, wireframe">
+</p>
+<p align="center"><em>Cooling channels around the nozzle (left); manifold and inlet passage, wireframe (right).</em></p>
 
 ## Design-space exploration
 
